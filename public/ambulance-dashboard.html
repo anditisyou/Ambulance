@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hospital Dashboard - Emergency Response System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --dark: #1e293b;
+            --light: #f8fafc;
+            --gray: #64748b;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f1f5f9;
+        }
+
+        /* Navbar */
+        .navbar-modern {
+            background: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .navbar-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .navbar-brand {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--danger);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .hospital-info {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        .hospital-details {
+            text-align: right;
+        }
+
+        .hospital-details .name {
+            font-weight: 600;
+            color: var(--dark);
+        }
+
+        .hospital-details .role {
+            font-size: 0.8rem;
+            color: var(--gray);
+        }
+
+        .availability-toggle {
+            padding: 0.5rem 1.2rem;
+            border-radius: 50px;
+            border: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .availability-toggle.available {
+            background: #d1fae5;
+            color: var(--success);
+        }
+
+        .availability-toggle.busy {
+            background: #fee2e2;
+            color: var(--danger);
+        }
+
+        .logout-btn {
+            padding: 0.5rem 1.2rem;
+            background: #fee2e2;
+            color: var(--danger);
+            border: none;
+            border-radius: 50px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .logout-btn:hover {
+            background: var(--danger);
+            color: white;
+        }
+
+        /* Main Container */
+        .dashboard-container {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 20px;
+            padding: 1.5rem;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(0,0,0,0.1);
+        }
+
+        .stat-icon {
+            position: absolute;
+            right: 1.5rem;
+            top: 1.5rem;
+            font-size: 2.5rem;
+            opacity: 0.2;
+            color: var(--gray);
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: var(--gray);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--dark);
+            line-height: 1.2;
+        }
+
+        .stat-trend {
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+        }
+
+        .stat-trend.positive {
+            color: var(--success);
+        }
+
+        .stat-trend.negative {
+            color: var(--danger);
+        }
+
+        /* Quick Actions */
+        .quick-actions {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .quick-action-btn {
+            padding: 0.8rem 1.5rem;
+            background: white;
+            border: none;
+            border-radius: 12px;
+            color: var(--dark);
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+            transition: all 0.3s ease;
+        }
+
+        .quick-action-btn:hover {
+            background: var(--primary);
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        .quick-action-btn i {
+            font-size: 1.1rem;
+        }
+
+        /* Emergency Requests Section */
+        .requests-section {
+            background: white;
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .section-header h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--dark);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .search-box {
+            display: flex;
+            align-items: center;
+            background: #f1f5f9;
+            border-radius: 12px;
+            padding: 0.5rem 1rem;
+        }
+
+        .search-box i {
+            color: var(--gray);
+            margin-right: 8px;
+        }
+
+        .search-box input {
+            border: none;
+            background: transparent;
+            outline: none;
+            padding: 0.3rem;
+            width: 200px;
+        }
+
+        .filter-dropdown {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 12px;
+            background: #f1f5f9;
+            color: var(--dark);
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        /* Table */
+        .table-container {
+            overflow-x: auto;
+        }
+
+        .requests-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .requests-table th {
+            text-align: left;
+            padding: 1rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--gray);
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .requests-table td {
+            padding: 1rem;
+            font-size: 0.95rem;
+            color: var(--dark);
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .requests-table tbody tr {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .requests-table tbody tr:hover {
+            background: #f8fafc;
+        }
+
+        .requests-table tbody tr.urgent {
+            background: #fee2e2;
+        }
+
+        .priority-badge {
+            padding: 0.3rem 1rem;
+            border-radius: 50px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .priority-badge.high {
+            background: #fee2e2;
+            color: var(--danger);
+        }
+
+        .priority-badge.medium {
+            background: #fff3cd;
+            color: var(--warning);
+        }
+
+        .priority-badge.low {
+            background: #d1fae5;
+            color: var(--success);
+        }
+
+        .status-badge {
+            padding: 0.3rem 1rem;
+            border-radius: 50px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .status-badge.pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-badge.accepted {
+            background: #d1fae5;
+            color: var(--success);
+        }
+
+        .status-badge.completed {
+            background: #e2e8f0;
+            color: var(--gray);
+        }
+
+        .action-btn {
+            padding: 0.4rem 1rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin: 0 0.2rem;
+            transition: all 0.3s ease;
+        }
+
+        .action-btn.accept {
+            background: var(--success);
+            color: white;
+        }
+
+        .action-btn.view {
+            background: #f1f5f9;
+            color: var(--dark);
+        }
+
+        .action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 10px rgba(0,0,0,0.1);
+        }
+
+        /* Medical History Modal */
+        .medical-record-item {
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.3s ease;
+        }
+
+        .medical-record-item:hover {
+            background: white;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .record-info h6 {
+            margin-bottom: 0.3rem;
+            font-weight: 600;
+        }
+
+        .record-info small {
+            color: var(--gray);
+        }
+
+        .view-record-btn {
+            padding: 0.5rem 1rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 0.85rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .navbar-container {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            
+            .hospital-info {
+                width: 100%;
+                justify-content: space-between;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .quick-actions {
+                justify-content: center;
+            }
+            
+            .section-header {
+                flex-direction: column;
+            }
+            
+            .search-box {
+                width: 100%;
+            }
+            
+            .search-box input {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar-modern">
+        <div class="navbar-container">
+            <a href="/" class="navbar-brand">
+                <i class="fas fa-hospital"></i>
+                <span>ERS Hospital</span>
+            </a>
+            
+            <div class="hospital-info">
+                <button class="availability-toggle available" id="availabilityBtn" onclick="toggleAvailability()">
+                    <i class="fas fa-circle me-2"></i>Available
+                </button>
+                
+                <div class="hospital-details">
+                    <div class="name" id="hospitalName">Loading...</div>
+                    <div class="role">Hospital</div>
+                </div>
+                
+                <button class="logout-btn" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-clock"></i>
+                </div>
+                <div class="stat-label">Pending Requests</div>
+                <div class="stat-value" id="pendingCount">0</div>
+                <div class="stat-trend negative">Needs attention</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <div class="stat-label">Accepted Today</div>
+                <div class="stat-value" id="acceptedCount">0</div>
+                <div class="stat-trend positive">+2 from yesterday</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-ambulance"></i>
+                </div>
+                <div class="stat-label">Incoming Ambulances</div>
+                <div class="stat-value" id="incomingCount">0</div>
+                <div class="stat-trend">ETA: 5 mins</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <div class="stat-label">Completed Total</div>
+                <div class="stat-value" id="completedCount">0</div>
+                <div class="stat-trend positive">↑ 23%</div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="quick-actions">
+            <button class="quick-action-btn" onclick="refreshRequests()">
+                <i class="fas fa-sync-alt"></i>
+                Refresh
+            </button>
+            <button class="quick-action-btn" onclick="exportData()">
+                <i class="fas fa-download"></i>
+                Export Report
+            </button>
+            <button class="quick-action-btn" onclick="viewStatistics()">
+                <i class="fas fa-chart-bar"></i>
+                Statistics
+            </button>
+        </div>
+
+        <!-- Emergency Requests Section -->
+        <section class="requests-section">
+            <div class="section-header">
+                <h2>
+                    <i class="fas fa-exclamation-triangle" style="color: var(--danger);"></i>
+                    Emergency Requests
+                </h2>
+                <div class="d-flex gap-2">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search patients..." id="searchInput">
+                    </div>
+                    <select class="filter-dropdown" id="statusFilter">
+                        <option value="all">All Status</option>
+                        <option value="PENDING">Pending</option>
+                        <option value="ACCEPTED">Accepted</option>
+                        <option value="COMPLETED">Completed</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="requests-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Patient</th>
+                            <th>Contact</th>
+                            <th>Location</th>
+                            <th>Priority</th>
+                            <th>Status</th>
+                            <th>Medical History</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="emergencyTableBody">
+                        <tr>
+                            <td colspan="8" class="text-center py-5">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="mt-2 text-muted">Loading requests...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <!-- Medical History Modal -->
+    <div class="modal fade" id="medicalHistoryModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-notes-medical me-2"></i>Patient Medical History
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="medicalHistoryContent">
+                        <!-- Medical records will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="/js/hospital-dashboard.js"></script>
+    <script>
+        let hospitalAvailable = true;
+
+        function toggleAvailability() {
+            hospitalAvailable = !hospitalAvailable;
+            const btn = document.getElementById('availabilityBtn');
+            
+            if (hospitalAvailable) {
+                btn.innerHTML = '<i class="fas fa-circle me-2"></i>Available';
+                btn.className = 'availability-toggle available';
+                updateHospitalStatus('available');
+            } else {
+                btn.innerHTML = '<i class="fas fa-circle me-2"></i>Busy';
+                btn.className = 'availability-toggle busy';
+                updateHospitalStatus('busy');
+            }
+        }
+
+        async function updateHospitalStatus(status) {
+            const token = localStorage.getItem('token');
+            try {
+                await fetch('/api/hospital/status', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ status })
+                });
+            } catch (error) {
+                console.error('Error updating status:', error);
+            }
+        }
+
+        function refreshRequests() {
+            loadEmergencyRequests();
+        }
+
+        function exportData() {
+            // Implement export functionality
+            alert('Exporting data...');
+        }
+
+        function viewStatistics() {
+            // Implement statistics view
+            alert('Opening statistics...');
+        }
+
+        // Search functionality
+        document.getElementById('searchInput')?.addEventListener('input', function(e) {
+            const searchTerm = e.target.value.toLowerCase();
+            const rows = document.querySelectorAll('#emergencyTableBody tr');
+            
+            rows.forEach(row => {
+                if (row.cells.length > 1) {
+                    const patientName = row.cells[1]?.textContent.toLowerCase() || '';
+                    const phone = row.cells[2]?.textContent.toLowerCase() || '';
+                    row.style.display = (patientName.includes(searchTerm) || phone.includes(searchTerm)) ? '' : 'none';
+                }
+            });
+        });
+
+        // Filter functionality
+        document.getElementById('statusFilter')?.addEventListener('change', function(e) {
+            const filter = e.target.value;
+            const rows = document.querySelectorAll('#emergencyTableBody tr');
+            
+            rows.forEach(row => {
+                if (row.cells.length > 1) {
+                    const status = row.cells[5]?.textContent.trim() || '';
+                    if (filter === 'all' || status === filter) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                }
+            });
+        });
+
+        // Enhanced accept function with animation
+        window.acceptRequest = async function(requestId) {
+            if (!confirm('Are you sure you want to accept this emergency request?')) {
+                return;
+            }
+            
+            const token = localStorage.getItem('token');
+            const row = event.target.closest('tr');
+            
+            // Add loading state
+            row.style.opacity = '0.5';
+            
+            try {
+                const response = await fetch(`/api/emergency/${requestId}/accept`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Show success notification
+                    showNotification('Request accepted successfully', 'success');
+                    loadEmergencyRequests();
+                } else {
+                    showNotification(data.message, 'error');
+                }
+            } catch (error) {
+                showNotification('Error accepting request', 'error');
+            } finally {
+                row.style.opacity = '1';
+            }
+        };
+
+        function showNotification(message, type) {
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.className = `alert alert-${type === 'success' ? 'success' : 'danger'} position-fixed top-0 end-0 m-3`;
+            notification.style.zIndex = '9999';
+            notification.innerHTML = message;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
