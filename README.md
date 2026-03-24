@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Emergency Response System — Production-Ready
 
 A real-time emergency dispatch platform built with **Node.js · Express · MongoDB · Socket.IO**.
@@ -296,3 +297,7 @@ When running multiple Node.js pods:
 1. **Token blacklist**: Redis is required — in-memory does not persist across instances
 2. **Socket.IO**: Install `socket.io-redis` adapter so events reach clients on all pods
 3. **File uploads**: Multer writes to OS temp dir — works fine with Cloudinary since files are streamed up and temp deleted immediately
+=======
+# Ambulance
+The app connects users to the nearest ambulance using GPS, ensuring quick emergency access. Key features include one-click requests, real-time ambulance availability, route optimization, ETA updates, safety notifications to contacts, feedback options, and nearby hospital information. Designed for ease of use in emergencies.
+>>>>>>> 3c602f6c04e05ef5d75353c0c56bfd0cf6781e43
