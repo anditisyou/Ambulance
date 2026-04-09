@@ -5,7 +5,7 @@ const { recordRequest } = require('../utils/metrics');
 module.exports = (req, res, next) => {
   // Skip metrics collection for health checks and static files in production
   if (process.env.NODE_ENV === 'production') {
-    if (req.path === '/health' || req.path.startsWith('/public/') || req.path.startsWith('/css/') || req.path.startsWith('/js/')) {
+    if (req.path === '/health' || req.path === '/ready' || req.path.startsWith('/public/') || req.path.startsWith('/css/') || req.path.startsWith('/js/')) {
       return next();
     }
   }

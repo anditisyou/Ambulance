@@ -158,6 +158,36 @@ class NotificationService {
   }
 
   /**
+   * Send email notification
+   * @param {string} to - Recipient email
+   * @param {string} subject - Email subject
+   * @param {string} html - HTML content
+   * @returns {Promise<boolean>}
+   */
+  async sendEmail(to, subject, html) {
+    if (!this.emailTransporter) {
+      console.warn('[Notification] Email not sent — service unavailable');
+      return false;
+    }
+
+    try {
+      const mailOptions = {
+        from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+        to,
+        subject,
+        html,
+      };
+
+      const info = await this.emailTransporter.sendMail(mailOptions);
+      console.info('[Notification] Email sent:', info.messageId);
+      return true;
+    } catch (error) {
+      console.error('[Notification] Email error:', error.message);
+      return false;
+    }
+  }
+
+  /**
    * Send alert notification to all configured channels
    * @param {Object} alert - Alert object with type, severity, message, value
    * @returns {Promise<void>}

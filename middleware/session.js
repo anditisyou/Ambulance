@@ -2,11 +2,19 @@
 
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
+const crypto = require('crypto');
 
 const maxAge = parseInt(process.env.SESSION_MAX_AGE, 10) || 7 * 24 * 60 * 60 * 1000;
-const sessionSecret = process.env.SESSION_SECRET;
+let sessionSecret = process.env.SESSION_SECRET;
+
+// Production should fail fast with a clear message; development can use a temporary secret.
 if (!sessionSecret) {
-  throw new Error('SESSION_SECRET is required for session security');
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SESSION_SECRET is required in production. Set SESSION_SECRET in environment variables.');
+  }
+  sessionSecret = crypto.randomBytes(32).toString('hex');
+  // eslint-disable-next-line no-console
+  console.warn('[Session] SESSION_SECRET missing in non-production; using ephemeral in-memory fallback.');
 }
 
 module.exports = session({

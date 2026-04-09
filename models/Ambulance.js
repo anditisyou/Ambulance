@@ -17,10 +17,8 @@ const ambulanceSchema = new mongoose.Schema(
     plateNumber: {
       type:     String,
       required: [true, 'Plate number is required'],
-      unique:   true,
       trim:     true,
       uppercase: true,
-      index:    true,
     },
 
     status: {
@@ -34,8 +32,6 @@ const ambulanceSchema = new mongoose.Schema(
       type:     mongoose.Schema.Types.ObjectId,
       ref:      'User',
       required: [true, 'Driver is required'],
-      unique:   true, // one ambulance per driver
-      index:    true,
     },
 
     currentLocation: {
@@ -72,9 +68,9 @@ const ambulanceSchema = new mongoose.Schema(
 );
 
 // ─── Performance indexes ──────────────────────────────────────────────────────
+ambulanceSchema.index({ plateNumber: 1 }, { unique: true });
+ambulanceSchema.index({ driverId: 1 }, { unique: true });
 ambulanceSchema.index({ status: 1, currentLocation: '2dsphere' }); // Nearest available lookup
-ambulanceSchema.index({ driverId: 1 }); // Driver assignment lookup
-ambulanceSchema.index({ plateNumber: 1 }); // Unique plate lookup
 ambulanceSchema.index({ status: 1, updatedAt: -1 }); // Status monitoring
 
 module.exports = mongoose.model('Ambulance', ambulanceSchema);

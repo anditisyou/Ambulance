@@ -165,7 +165,10 @@ const emergencyRequestSchema = new mongoose.Schema(
         enum:    ['Point'],
         default: 'Point',
       },
-      coordinates: [Number], // [longitude, latitude]
+      coordinates: {
+        type: [Number], // [longitude, latitude]
+        default: [0, 0], // ✅ FIX: Default coordinates to prevent invalid GeoJSON
+      },
     },
 
     // Driver rejection reason for audit/compliance

@@ -3,13 +3,50 @@
 const Redis = require('ioredis');
 const logger = require('./logger');
 
-const redisConnection = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: process.env.REDIS_PORT || 6379,
-  password: process.env.REDIS_PASSWORD || undefined,
+const buildRedisConnection = () => {
+  if (process.env.REDIS_URL) {
+    try {
+      const parsed = new URL(process.env.REDIS_URL);
+      return {
+        host: parsed.hostname,
+        port: Number(parsed.port || 6379),
+        username: parsed.username || undefined,
+        password: parsed.password || undefined,
+        tls: parsed.protocol === 'rediss:' ? {} : undefined,
+      };
+    } catch (err) {
+      logger.warn('Invalid REDIS_URL for socket emitter; falling back to REDIS_HOST/REDIS_PORT', { error: err.message });
+    }
+  }
+
+  return {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: Number(process.env.REDIS_PORT || 6379),
+    password: process.env.REDIS_PASSWORD || undefined,
+  };
 };
 
-const publisher = new Redis(redisConnection);
+const redisConnection = buildRedisConnection();
+
+const publisher = new Redis(redisConnection, {
+  connectTimeout: 10000,
+  enableOfflineQueue: false,
+  maxRetriesPerRequest: 3,
+  retryStrategy: (times) => Math.min(times * 50, 2000),
+  reconnectOnError: (err) => {
+    if (err.message.includes('ETIMEDOUT') || err.message.includes('ECONNRESET')) {
+      return true;
+    }
+    return false;
+  },
+  autoResubscribe: true,
+});
+
+publisher.on('error', (err) => logger.warn('[SocketEmitter Redis] Error:', err.message || err));
+publisher.on('connect', () => logger.info('[SocketEmitter Redis] Connected'));
+publisher.on('ready', () => logger.info('[SocketEmitter Redis] Ready'));
+publisher.on('close', () => logger.warn('[SocketEmitter Redis] Closed'));
+publisher.on('reconnecting', (delay) => logger.warn('[SocketEmitter Redis] Reconnecting in', delay, 'ms'));
 
 // Batch events to reduce Redis publishes
 const eventBuffer = new Map();

@@ -1,24 +1,23 @@
-<<<<<<< HEAD
-# 🚑 Emergency Response System — Production-Grade
+﻿# ðŸš‘ Emergency Response System â€” Production-Grade
 
-A **production-ready** real-time emergency dispatch platform built with **Node.js · Express · MongoDB · Socket.IO · Redis**.
+A **production-ready** real-time emergency dispatch platform built with **Node.js Â· Express Â· MongoDB Â· Socket.IO Â· Redis**.
 
-## ✨ Production-Grade Features
+## âœ¨ Production-Grade Features
 
-### 🔧 Core Infrastructure
+### ðŸ”§ Core Infrastructure
 - **Advanced Rate Limiting**: Redis-backed tiered rate limiting with sliding windows
 - **Real Alert Delivery**: Slack, email, and webhook notifications for system alerts
 - **Health Checks**: Comprehensive `/health` endpoint with system diagnostics
 - **Metrics Dashboard**: Real-time visualization at `/metrics-dashboard`
 - **Load Testing**: 1000-user simulation with detailed performance analysis
 
-### 🛡️ Security & Observability
+### ðŸ›¡ï¸ Security & Observability
 - **Enterprise Security**: Helmet.js, CORS, MongoDB sanitization, CSRF protection
 - **Advanced Monitoring**: Prometheus metrics export, structured logging
 - **Alert Management**: Multi-channel alerting with cooldown prevention
 - **Audit Compliance**: Immutable audit logs with tamper-proof records
 
-### ⚡ Performance & Scalability
+### âš¡ Performance & Scalability
 - **Horizontal Scaling**: Multi-instance deployment with Redis session sharing
 - **Queue Management**: BullMQ with priority queues and retry logic
 - **Load Shedding**: Graceful degradation under extreme load (10k+ users)
@@ -27,16 +26,24 @@ A **production-ready** real-time emergency dispatch platform built with **Node.j
 ---
 
 ## Table of Contents
-1. [Architecture](#architecture)
-2. [Quick Start](#quick-start)
-3. [Production Deployment](#production-deployment)
-4. [Environment Variables](#environment-variables)
-5. [API Reference](#api-reference)
-6. [Monitoring & Alerting](#monitoring--alerting)
-7. [Load Testing](#load-testing)
-8. [Security Model](#security-model)
-9. [Running Tests](#running-tests)
-10. [Deployment](#deployment)
+1. [System Vision](#system-vision)
+2. [Architecture](#architecture)
+3. [Quick Start](#quick-start)
+4. [Production Deployment](#production-deployment)
+5. [Environment Variables](#environment-variables)
+6. [API Reference](#api-reference)
+7. [Monitoring & Alerting](#monitoring--alerting)
+8. [Load Testing](#load-testing)
+9. [Security Model](#security-model)
+10. [Running Tests](#running-tests)
+11. [Deployment](#deployment)
+
+---
+
+## System Vision
+
+The ERS mission and scalability blueprint is documented in [SYSTEM_VISION.md](./SYSTEM_VISION.md).
+It captures the core motto, target users, current and future scale targets, architecture layers, and growth strategy.
 
 ---
 
@@ -44,41 +51,41 @@ A **production-ready** real-time emergency dispatch platform built with **Node.j
 
 ```
 emergency-response-system/
-├── index.js                    # Express server + MongoDB + Socket.IO bootstrap
-├── controllers/                # Request handlers (one per domain)
-│   ├── authController.js
-│   ├── emergencyController.js
-│   ├── dispatchController.js
-│   ├── ambulanceController.js
-│   ├── adminController.js
-│   ├── analyticsController.js
-│   └── medicalController.js
-├── middleware/
-│   ├── auth.js                 # JWT verification + token blacklist (Redis/memory)
-│   ├── role.js                 # Role-based access control
-│   ├── validate.js             # Lightweight request validator
-│   └── errorHandler.js        # Global Express error handler
-├── models/                     # Mongoose schemas
-│   ├── User.js
-│   ├── Ambulance.js
-│   ├── EmergencyRequest.js
-│   ├── DispatchLog.js
-│   └── MedicalRecord.js
-├── routes/                     # Express routers (one per domain)
-├── utils/
-│   ├── constants.js            # ALL enums — single source of truth
-│   ├── AppError.js             # Custom operational error class
-│   ├── haversine.js            # Great-circle distance calculation
-│   ├── dispatchEngine.js       # Ambulance allocation logic
-│   ├── etaCalculator.js        # OSRM routing with Haversine fallback
-│   └── redisClient.js          # Redis initialisation with graceful fallback
-└── tests/
-    ├── system.test.js          # Utilities, constants, role middleware, edge cases
-    ├── auth.test.js            # Auth controller (register, login, logout, JWT)
-    ├── dispatch.test.js        # Dispatch controller + coordinate validation
-    ├── ambulance.test.js       # Ambulance controller + status transitions
-    ├── analytics-admin.test.js # Analytics + admin controllers
-    └── security.test.js        # Security-specific regression tests
+â”œâ”€â”€ index.js                    # Express server + MongoDB + Socket.IO bootstrap
+â”œâ”€â”€ controllers/                # Request handlers (one per domain)
+â”‚   â”œâ”€â”€ authController.js
+â”‚   â”œâ”€â”€ emergencyController.js
+â”‚   â”œâ”€â”€ dispatchController.js
+â”‚   â”œâ”€â”€ ambulanceController.js
+â”‚   â”œâ”€â”€ adminController.js
+â”‚   â”œâ”€â”€ analyticsController.js
+â”‚   â””â”€â”€ medicalController.js
+â”œâ”€â”€ middleware/
+â”‚   â”œâ”€â”€ auth.js                 # JWT verification + token blacklist (Redis/memory)
+â”‚   â”œâ”€â”€ role.js                 # Role-based access control
+â”‚   â”œâ”€â”€ validate.js             # Lightweight request validator
+â”‚   â””â”€â”€ errorHandler.js        # Global Express error handler
+â”œâ”€â”€ models/                     # Mongoose schemas
+â”‚   â”œâ”€â”€ User.js
+â”‚   â”œâ”€â”€ Ambulance.js
+â”‚   â”œâ”€â”€ EmergencyRequest.js
+â”‚   â”œâ”€â”€ DispatchLog.js
+â”‚   â””â”€â”€ MedicalRecord.js
+â”œâ”€â”€ routes/                     # Express routers (one per domain)
+â”œâ”€â”€ utils/
+â”‚   â”œâ”€â”€ constants.js            # ALL enums â€” single source of truth
+â”‚   â”œâ”€â”€ AppError.js             # Custom operational error class
+â”‚   â”œâ”€â”€ haversine.js            # Great-circle distance calculation
+â”‚   â”œâ”€â”€ dispatchEngine.js       # Ambulance allocation logic
+â”‚   â”œâ”€â”€ etaCalculator.js        # OSRM routing with Haversine fallback
+â”‚   â””â”€â”€ redisClient.js          # Redis initialisation with graceful fallback
+â””â”€â”€ tests/
+    â”œâ”€â”€ system.test.js          # Utilities, constants, role middleware, edge cases
+    â”œâ”€â”€ auth.test.js            # Auth controller (register, login, logout, JWT)
+    â”œâ”€â”€ dispatch.test.js        # Dispatch controller + coordinate validation
+    â”œâ”€â”€ ambulance.test.js       # Ambulance controller + status transitions
+    â”œâ”€â”€ analytics-admin.test.js # Analytics + admin controllers
+    â””â”€â”€ security.test.js        # Security-specific regression tests
 ```
 
 ---
@@ -108,17 +115,17 @@ npm test
 
 | Variable | Required | Description |
 |---|---|---|
-| `MONGODB_URI` | ✅ | MongoDB connection string |
-| `JWT_SECRET` | ✅ | 64-byte random hex string (generate with `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`) |
-| `JWT_EXPIRE` | — | Token lifetime (default: `7d`) |
-| `PORT` | — | HTTP port (default: `3000`) |
-| `NODE_ENV` | — | `development` or `production` |
-| `REDIS_URL` | — | Redis connection URL (required for multi-instance deployments) |
-| `CLOUDINARY_CLOUD_NAME` | — | Required for medical record file uploads |
-| `CLOUDINARY_API_KEY` | — | Required for medical record file uploads |
-| `CLOUDINARY_API_SECRET` | — | Required for medical record file uploads |
-| `OSRM_ROUTING_URL` | — | OSRM server URL for road-network ETA (falls back to Haversine) |
-| `FRONTEND_URL` | — | CORS origin (default: `http://localhost:3000`) |
+| `MONGODB_URI` | âœ… | MongoDB connection string |
+| `JWT_SECRET` | âœ… | 64-byte random hex string (generate with `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`) |
+| `JWT_EXPIRE` | â€” | Token lifetime (default: `7d`) |
+| `PORT` | â€” | HTTP port (default: `3000`) |
+| `NODE_ENV` | â€” | `development` or `production` |
+| `REDIS_URL` | â€” | Redis connection URL (required for multi-instance deployments) |
+| `CLOUDINARY_CLOUD_NAME` | â€” | Required for medical record file uploads |
+| `CLOUDINARY_API_KEY` | â€” | Required for medical record file uploads |
+| `CLOUDINARY_API_SECRET` | â€” | Required for medical record file uploads |
+| `OSRM_ROUTING_URL` | â€” | OSRM server URL for road-network ETA (falls back to Haversine) |
+| `FRONTEND_URL` | â€” | CORS origin (default: `http://localhost:3000`) |
 
 ---
 
@@ -208,15 +215,15 @@ npm test
 ## Security Model
 
 - **JWT** authentication with token blacklist (Redis in production, in-memory fallback in development)
-- **httpOnly + SameSite:Strict** cookies — tokens never accessible from JavaScript
-- **Token revocation** on logout — tokens invalidated immediately, not just at expiry
+- **httpOnly + SameSite:Strict** cookies â€” tokens never accessible from JavaScript
+- **Token revocation** on logout â€” tokens invalidated immediately, not just at expiry
 - **bcrypt** password hashing with work factor 12 (OWASP 2024 minimum)
-- **Role-based access control** on every route — no unauthenticated or wrong-role access
-- **Input sanitisation** — all pagination parameters clamped, descriptions truncated, coordinates range-validated
-- **Export DoS prevention** — analytics export hard-capped at 10,000 rows
-- **Generic error messages** for auth failures — prevents user enumeration
+- **Role-based access control** on every route â€” no unauthenticated or wrong-role access
+- **Input sanitisation** â€” all pagination parameters clamped, descriptions truncated, coordinates range-validated
+- **Export DoS prevention** â€” analytics export hard-capped at 10,000 rows
+- **Generic error messages** for auth failures â€” prevents user enumeration
 - **Helmet** security headers on all responses
-- **Rate limiting** — 200 requests per 15 minutes per IP
+- **Rate limiting** â€” 200 requests per 15 minutes per IP
 
 ---
 
@@ -332,6 +339,10 @@ docker-compose -f docker-compose.prod.yml up -d
 - **API Docs**: `https://your-domain.com/api-docs`
 - **Metrics**: `https://your-domain.com/metrics-dashboard`
 - **Health Check**: `https://your-domain.com/health`
+- **Readiness Check**: `https://your-domain.com/ready`
+
+`/health` is a lightweight liveness endpoint (always HTTP 200 with status payload).
+`/ready` is a strict dependency gate (HTTP 503 when DB/Redis dependencies are not ready).
 
 ### Scaling Configuration
 ```javascript
@@ -355,33 +366,33 @@ docker-compose -f docker-compose.prod.yml up -d
 
 | # | Severity | Description |
 |---|---|---|
-| 1 | 🔴 CRITICAL | `index.js` was a Cloudinary sample — no Express server existed |
-| 2 | 🔴 CRITICAL | `DispatchLog` used in `emergencyController` without being imported |
-| 3 | 🔴 CRITICAL | `mongoose` used for transactions in `emergencyController` without import |
-| 4 | 🔴 CRITICAL | `mongoose` used for transactions in `medicalController` without import |
-| 5 | 🔴 CRITICAL | `REQUEST_STATUS.ACCEPTED` doesn't exist — saves `undefined` to DB |
-| 6 | 🔴 CRITICAL | `REQUEST_PRIORITY.includes()` called on Object (not array) → TypeError |
-| 7 | 🔴 CRITICAL | `REQUEST_TYPES.includes()` called on Object (not array) → TypeError |
-| 8 | 🔴 CRITICAL | `.map(req => ...)` shadows outer Express `req` parameter |
-| 9 | 🔴 SECURITY | Live MongoDB + Cloudinary credentials committed to `.env.example` |
-| 10 | 🟠 SECURITY | Token accepted from `?token=` query param → logs in access logs |
-| 11 | 🟠 SECURITY | `startsWith('Bearer')` missing trailing space — malformed check |
-| 12 | 🟠 SECURITY | In-memory blacklist not shared across server instances |
-| 13 | 🟡 SECURITY | bcrypt work factor 10 (OWASP minimum is 12) |
-| 14 | 🟡 SECURITY | No row limit on analytics export → OOM / DoS |
-| 15 | 🟡 LOGIC | `requireAllRoles` always fails for multiple required roles |
-| 16 | 🟡 LOGIC | Ambulance freed before next-ambulance search — race condition window |
-| 17 | 🟡 PERF | N+1 query — 1 DB call per request document to fetch driver info |
-| 18 | 🟡 MAINTAINABILITY | `calculateDistance` copy-pasted in 2 controllers |
-| 19 | 🟡 LOGIC | Two conflicting compound indexes on EmergencyRequest |
-| 20 | 🟡 LOGIC | Duplicate `role` index on User model |
-| 21 | 🟡 LOGIC | Hardcoded status strings in `adminController` instead of constants |
-| 22 | 🟡 LOGIC | Incorrect `$cond` pattern for null date check in analytics pipeline |
-| 23 | 🟡 COMPAT | `$percentile` requires MongoDB 7.0+ — fails silently on older clusters |
-| 24 | 🟡 LOGIC | `logs[]` array used in controllers but not defined in DispatchLog schema |
-| 25 | 🟡 LOGIC | File metadata fields saved in controller but missing from MedicalRecord schema |
-| 26 | 🟡 LOGIC | Ambulance `capacity` default = 0, which is never valid |
-| 27 | 🟡 DX | Manual `updatedAt` bookkeeping instead of `timestamps: true` |
+| 1 | ðŸ”´ CRITICAL | `index.js` was a Cloudinary sample â€” no Express server existed |
+| 2 | ðŸ”´ CRITICAL | `DispatchLog` used in `emergencyController` without being imported |
+| 3 | ðŸ”´ CRITICAL | `mongoose` used for transactions in `emergencyController` without import |
+| 4 | ðŸ”´ CRITICAL | `mongoose` used for transactions in `medicalController` without import |
+| 5 | ðŸ”´ CRITICAL | `REQUEST_STATUS.ACCEPTED` doesn't exist â€” saves `undefined` to DB |
+| 6 | ðŸ”´ CRITICAL | `REQUEST_PRIORITY.includes()` called on Object (not array) â†’ TypeError |
+| 7 | ðŸ”´ CRITICAL | `REQUEST_TYPES.includes()` called on Object (not array) â†’ TypeError |
+| 8 | ðŸ”´ CRITICAL | `.map(req => ...)` shadows outer Express `req` parameter |
+| 9 | ðŸ”´ SECURITY | Live MongoDB + Cloudinary credentials committed to `.env.example` |
+| 10 | ðŸŸ  SECURITY | Token accepted from `?token=` query param â†’ logs in access logs |
+| 11 | ðŸŸ  SECURITY | `startsWith('Bearer')` missing trailing space â€” malformed check |
+| 12 | ðŸŸ  SECURITY | In-memory blacklist not shared across server instances |
+| 13 | ðŸŸ¡ SECURITY | bcrypt work factor 10 (OWASP minimum is 12) |
+| 14 | ðŸŸ¡ SECURITY | No row limit on analytics export â†’ OOM / DoS |
+| 15 | ðŸŸ¡ LOGIC | `requireAllRoles` always fails for multiple required roles |
+| 16 | ðŸŸ¡ LOGIC | Ambulance freed before next-ambulance search â€” race condition window |
+| 17 | ðŸŸ¡ PERF | N+1 query â€” 1 DB call per request document to fetch driver info |
+| 18 | ðŸŸ¡ MAINTAINABILITY | `calculateDistance` copy-pasted in 2 controllers |
+| 19 | ðŸŸ¡ LOGIC | Two conflicting compound indexes on EmergencyRequest |
+| 20 | ðŸŸ¡ LOGIC | Duplicate `role` index on User model |
+| 21 | ðŸŸ¡ LOGIC | Hardcoded status strings in `adminController` instead of constants |
+| 22 | ðŸŸ¡ LOGIC | Incorrect `$cond` pattern for null date check in analytics pipeline |
+| 23 | ðŸŸ¡ COMPAT | `$percentile` requires MongoDB 7.0+ â€” fails silently on older clusters |
+| 24 | ðŸŸ¡ LOGIC | `logs[]` array used in controllers but not defined in DispatchLog schema |
+| 25 | ðŸŸ¡ LOGIC | File metadata fields saved in controller but missing from MedicalRecord schema |
+| 26 | ðŸŸ¡ LOGIC | Ambulance `capacity` default = 0, which is never valid |
+| 27 | ðŸŸ¡ DX | Manual `updatedAt` bookkeeping instead of `timestamps: true` |
 
 ---
 
@@ -414,10 +425,6 @@ CMD ["node", "index.js"]
 ### Scaling to multiple instances
 
 When running multiple Node.js pods:
-1. **Token blacklist**: Redis is required — in-memory does not persist across instances
+1. **Token blacklist**: Redis is required â€” in-memory does not persist across instances
 2. **Socket.IO**: Install `socket.io-redis` adapter so events reach clients on all pods
-3. **File uploads**: Multer writes to OS temp dir — works fine with Cloudinary since files are streamed up and temp deleted immediately
-=======
-# Ambulance
-The app connects users to the nearest ambulance using GPS, ensuring quick emergency access. Key features include one-click requests, real-time ambulance availability, route optimization, ETA updates, safety notifications to contacts, feedback options, and nearby hospital information. Designed for ease of use in emergencies.
->>>>>>> 3c602f6c04e05ef5d75353c0c56bfd0cf6781e43
+3. **File uploads**: Multer writes to OS temp dir â€” works fine with Cloudinary since files are streamed up and temp deleted immediately

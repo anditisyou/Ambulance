@@ -23,13 +23,55 @@ const AlertManager = require('./alerting');
 
 const alertManager = new AlertManager();
 
-// Redis connection for BullMQ
-const redisConnection = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: process.env.REDIS_PORT || 6379,
-  password: process.env.REDIS_PASSWORD || undefined,
+// Redis connection for BullMQ (supports REDIS_URL and REDIS_HOST/PORT).
+const buildRedisConnection = () => {
+  if (process.env.REDIS_URL) {
+    try {
+      const parsed = new URL(process.env.REDIS_URL);
+      return {
+        host: parsed.hostname,
+        port: Number(parsed.port || 6379),
+        username: parsed.username || undefined,
+        password: parsed.password || undefined,
+        tls: parsed.protocol === 'rediss:' ? {} : undefined,
+      };
+    } catch (err) {
+      logger.warn('Invalid REDIS_URL; falling back to REDIS_HOST/REDIS_PORT', { error: err.message });
+    }
+  }
+
+  return {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: Number(process.env.REDIS_PORT || 6379),
+    password: process.env.REDIS_PASSWORD || undefined,
+  };
 };
-const redis = new Redis(redisConnection);
+
+const redisConnection = buildRedisConnection();
+const redis = new Redis(redisConnection, {
+  connectTimeout: 10000,
+  enableOfflineQueue: false,
+  maxRetriesPerRequest: 3,
+  retryStrategy: (times) => Math.min(times * 50, 2000),
+  reconnectOnError: (err) => {
+    if (err.message.includes('ETIMEDOUT') || err.message.includes('ECONNRESET')) {
+      return true;
+    }
+    return false;
+  },
+  autoResubscribe: true,
+});
+
+const logRedisState = (event, err) => {
+  if (err) logger.warn('[DispatchQueue Redis] ' + event + ':', err.message || err);
+  else logger.info('[DispatchQueue Redis] ' + event);
+};
+
+redis.on('connect', () => logRedisState('Connected'));
+redis.on('ready', () => logRedisState('Ready'));
+redis.on('error', (err) => logRedisState('Error', err));
+redis.on('close', () => logRedisState('Closed'));
+redis.on('reconnecting', (delay) => logRedisState(`Reconnecting in ${delay}ms`));
 
 const RECONCILIATION_LOCK_KEY = 'dispatch:reconcile:lock';
 const RECONCILIATION_INTERVAL_MS = 60000; // 1 minute
@@ -88,9 +130,9 @@ const dispatchWorker = new Worker('dispatch', async (job) => {
       }
 
       if (action === 'allocate') {
-        result = await allocateAmbulance(request, session, request.assignedHospital);
+        result = await allocateAmbulance(request, session, true, request.assignedHospital);
       } else if (action === 'retry') {
-        result = await handleRejection(request, session);
+        result = await handleRejection(request, session, true);
       } else if (action === 'timeout-check') {
         const isExpectedAmbulance = request.assignedAmbulanceId &&
           String(request.assignedAmbulanceId) === String(job.data.ambulanceId);
@@ -244,6 +286,28 @@ const updateQueueDepth = async () => {
     logger.error('Failed to update dispatch queue depth', { error: err.message });
     return 0;
   }
+};
+
+let cachedQueueStats = { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 };
+let lastQueueStatsAt = 0;
+const QUEUE_STATS_TTL_MS = 5000;
+
+const refreshQueueStats = async (force = false) => {
+  const now = Date.now();
+  if (!force && now - lastQueueStatsAt < QUEUE_STATS_TTL_MS) {
+    return cachedQueueStats;
+  }
+
+  const counts = await dispatchQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed');
+  cachedQueueStats = {
+    waiting: counts.waiting || 0,
+    active: counts.active || 0,
+    completed: counts.completed || 0,
+    failed: counts.failed || 0,
+    delayed: counts.delayed || 0,
+  };
+  lastQueueStatsAt = now;
+  return cachedQueueStats;
 };
 
 const getTrackedRequestIds = async () => {
@@ -545,6 +609,16 @@ queueEvents.on('failed', async ({ jobId, failedReason }) => {
   await updateQueueDepth();
 });
 
+// Keep queue stats fresh on an interval to avoid expensive per-request scans.
+setInterval(() => {
+  refreshQueueStats(true)
+    .then((stats) => {
+      setDispatchQueueStats(stats);
+      alertManager.checkThresholds(getMetrics());
+    })
+    .catch((err) => logger.error('Periodic queue stats refresh failed', { error: err.message }));
+}, QUEUE_STATS_TTL_MS).unref();
+
 // Function to add dispatch job
 const addDispatchJob = async (requestId, action = 'allocate', rejectedAmbulanceId = null, priority = 1) => {
   const job = await dispatchQueue.add('dispatch-request', {
@@ -562,19 +636,7 @@ const addDispatchJob = async (requestId, action = 'allocate', rejectedAmbulanceI
 
 // Function to get queue stats
 const getQueueStats = async () => {
-  const waiting = await dispatchQueue.getWaiting();
-  const active = await dispatchQueue.getActive();
-  const completed = await dispatchQueue.getCompleted();
-  const failed = await dispatchQueue.getFailed();
-  const delayed = await dispatchQueue.getDelayed();
-
-  return {
-    waiting: waiting.length,
-    active: active.length,
-    completed: completed.length,
-    failed: failed.length,
-    delayed: delayed.length,
-  };
+  return refreshQueueStats();
 };
 
 // Function to add timeout job for ambulance acceptance

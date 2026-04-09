@@ -53,6 +53,15 @@ const STATUS = {
     CANCELLED: 'CANCELLED'
 };
 
+function normalizeAmbulanceStatus(status) {
+    if (typeof status !== 'string') return status;
+    const normalized = status.trim().toUpperCase();
+    if (normalized === 'ENROUTE' || normalized === 'ENROUT') {
+        return STATUS.EN_ROUTE;
+    }
+    return normalized;
+}
+
 function getCurrentUserId() {
     const user = apiClient.authState.getUser();
     return user?.id || user?._id;
@@ -66,14 +75,21 @@ function setAmbulanceStatusDisplay(status, hasAmbulance = true) {
 
     driverHasAmbulance = hasAmbulance;
 
+    const normalizedStatus = normalizeAmbulanceStatus(status);
     if (statusEl) {
-        statusEl.textContent = hasAmbulance ? status : 'Not registered';
+        statusEl.textContent = hasAmbulance ? normalizedStatus : 'Not registered';
     }
 
     if (statusBtn) {
         statusBtn.style.display = hasAmbulance ? 'inline-block' : 'none';
         if (hasAmbulance) {
-            statusBtn.textContent = status === 'AVAILABLE' ? 'Set Busy' : 'Set Available';
+            if (normalizedStatus === 'AVAILABLE') {
+                statusBtn.textContent = 'Set Maintenance';
+            } else if (['MAINTENANCE', 'BUSY', 'EN_ROUTE'].includes(normalizedStatus)) {
+                statusBtn.textContent = 'Set Available';
+            } else {
+                statusBtn.textContent = 'Toggle Status';
+            }
             statusBtn.disabled = false;
         }
     }
@@ -231,7 +247,13 @@ function initSocket() {
         socket.disconnect();
     }
     
-    socket = io({ auth: { token } });
+    socket = io({
+        transports: ['polling', 'websocket'],
+        auth: { token },
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+    });
     
     socket.on('connect', () => {
         socketConnected = true;
@@ -428,7 +450,7 @@ function updateDriverLocationDisplay(coords) {
 function startDriverLocationWatch(ambulanceId) {
     if (!navigator.geolocation || driverWatchId) return;
 
-    driverWatchId = navigator.geolocation.watchPosition(async (position) => {
+    const handlePosition = async (position) => {
         const { latitude, longitude } = position.coords;
         const newCoords = [longitude, latitude];
         driverCoords = newCoords;
@@ -442,48 +464,78 @@ function startDriverLocationWatch(ambulanceId) {
             });
         } catch (err) {
             console.error('Unable to sync driver location:', err);
+            showNotification('Unable to sync driver location. Please check your network.', 'warning');
         }
-    }, (err) => {
+    };
+
+    const handleLocationError = (err) => {
         console.warn('Location watch failed:', err);
-    }, {
-        enableHighAccuracy: true,
-        maximumAge: 5000,
-        timeout: 15000,
+        showNotification(
+            `Driver location unavailable: ${err.message || 'Please enable location services and try again.'}`,
+            'warning'
+        );
+
+        if (err.code === 3) {
+            // Timeout expired: try a one-time lower-accuracy request before giving up
+            navigator.geolocation.getCurrentPosition(handlePosition, (fallbackErr) => {
+                console.warn('Fallback location failed:', fallbackErr);
+                showNotification(
+                    `Unable to get current position: ${fallbackErr.message || 'Please try again.'}`,
+                    'warning'
+                );
+            }, {
+                enableHighAccuracy: false,
+                maximumAge: 15000,
+                timeout: 30000,
+            });
+        }
+    };
+
+    driverWatchId = navigator.geolocation.watchPosition(handlePosition, handleLocationError, {
+        enableHighAccuracy: false,
+        maximumAge: 10000,
+        timeout: 30000,
     });
 }
 
 async function toggleStatus() {
     const userId = getCurrentUserId();
-    
+
     try {
         const response = await apiClient.request('/api/ambulances');
         const myAmbulance = response.data.find(amb => String(amb.driverId?._id || amb.driverId) === String(userId));
-        
+
         if (!myAmbulance) {
             showNotification('No ambulance found for this driver.', 'warning');
             return;
         }
 
-        const current = myAmbulance.status;
-        if (current === 'ASSIGNED' || current === 'EN_ROUTE') {
-            showNotification('Cannot toggle status while assigned or en route.', 'warning');
+        const current = normalizeAmbulanceStatus(myAmbulance.status);
+        let newStatus;
+        if (current === 'AVAILABLE') {
+            newStatus = 'MAINTENANCE';
+        } else if (['MAINTENANCE', 'BUSY', 'EN_ROUTE'].includes(current)) {
+            newStatus = 'AVAILABLE';
+        } else if (current === 'ASSIGNED') {
+            showNotification('Cannot toggle status while assigned. Please accept or reject the assignment first.', 'warning');
+            return;
+        } else {
+            showNotification(`Cannot toggle ambulance status from ${current}.`, 'warning');
             return;
         }
-        const newStatus = current === 'AVAILABLE' ? 'MAINTENANCE' : 'AVAILABLE';
-        const updateData = await apiClient.request(`/api/ambulances/${myAmbulance._id}/status`, {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ status: newStatus })
+
+        const updateData = await apiClient.patch(`/api/ambulances/${myAmbulance._id}/status`, {
+            status: newStatus,
         });
-        
+
         if (updateData.success) {
             showNotification(`Status updated to ${newStatus}`, 'success');
             loadAmbulanceStatus();
         }
     } catch (error) {
-        showNotification('Error updating status', 'danger');
+        const message = error.response?.message || error.message || 'Error updating status';
+        showNotification(message, 'danger');
+        console.error('Ambulance status update failed', error);
     }
 }
 

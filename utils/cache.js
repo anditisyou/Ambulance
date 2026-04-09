@@ -6,6 +6,7 @@
  */
 
 const redisClient = require('./redisClient');
+const { isRedisAvailable } = require('./redisClient');
 const logger = require('./logger');
 
 class Cache {
@@ -14,7 +15,7 @@ class Cache {
   }
 
   isAvailable() {
-    return Boolean(redisClient && typeof redisClient.get === 'function');
+    return isRedisAvailable() && Boolean(redisClient && typeof redisClient.get === 'function');
   }
 
   /**

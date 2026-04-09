@@ -107,8 +107,8 @@ const getSlaStatus = (request) => {
   return SLA_STATUS.ON_TRACK;
 };
 
-const getNextQueuedRequest = async (session) => {
-  const [queuedRequest] = await EmergencyRequest.aggregate([
+const getNextQueuedRequest = async (session, useTransaction = true) => {
+  const aggregation = EmergencyRequest.aggregate([
     { $match: { status: REQUEST_STATUS.PENDING } },
     {
       $addFields: {
@@ -127,8 +127,13 @@ const getNextQueuedRequest = async (session) => {
     },
     { $sort: { priorityRank: -1, requestTime: 1 } },
     { $limit: 1 },
-  ]).session(session).exec();
+  ]);
 
+  if (useTransaction && session) {
+    aggregation.session(session);
+  }
+
+  const [queuedRequest] = await aggregation.exec();
   return queuedRequest || null;
 };
 
@@ -143,7 +148,7 @@ const getNextQueuedRequest = async (session) => {
  * @param {import('mongoose').ClientSession} session
  * @returns {Promise<import('mongoose').Document|null>}
  */
-const findNearest = async (location, priority, excludeIds, session, hospital = null) => {
+const findNearest = async (location, priority, excludeIds, session, useTransaction = true, hospital = null) => {
   // Validate coordinates BEFORE processing
   if (!location?.coordinates || !Array.isArray(location.coordinates) || location.coordinates.length !== 2) {
     logger.error('Invalid location coordinates: missing or malformed', { location });
@@ -168,16 +173,24 @@ const findNearest = async (location, priority, excludeIds, session, hospital = n
         $maxDistance: maxDistance,
       },
     },
+    // Ensure location data is valid
+    'currentLocation.type': 'Point',
+    'currentLocation.coordinates': { $exists: true, $size: 2 },
   };
 
   if (excludeIds && excludeIds.length > 0) {
     filter._id = { $nin: excludeIds };
   }
 
-  const candidates = await Ambulance.find(filter)
+  const query = Ambulance.find(filter)
     .populate('driverId', 'name phone')
-    .session(session)
     .limit(5); // Reduced from 10 to 5 for better performance
+
+  if (useTransaction && session) {
+    query.session(session);
+  }
+
+  const candidates = await query;
 
   if (!candidates.length) {
     const shouldUseFallback = priority === REQUEST_PRIORITY.CRITICAL;
@@ -208,10 +221,15 @@ const findNearest = async (location, priority, excludeIds, session, hospital = n
       excludeIds,
     });
 
-    const fallbackCandidates = await Ambulance.find(fallbackFilter)
+    const fallbackQuery = Ambulance.find(fallbackFilter)
       .populate('driverId', 'name phone')
-      .session(session)
       .limit(5);
+
+    if (useTransaction && session) {
+      fallbackQuery.session(session);
+    }
+
+    const fallbackCandidates = await fallbackQuery;
 
     if (fallbackCandidates.length) {
       const requestStub = { location: { coordinates: location }, priority };
@@ -219,10 +237,15 @@ const findNearest = async (location, priority, excludeIds, session, hospital = n
       scored.sort((a, b) => b.score - a.score);
       const best = scored[0].ambulance;
 
+      const updateOptions = { new: true };
+      if (useTransaction && session) {
+        updateOptions.session = session;
+      }
+
       const updated = await Ambulance.findOneAndUpdate(
         { _id: best._id, status: AMBULANCE_STATUS.AVAILABLE },
         { status: AMBULANCE_STATUS.ASSIGNED },
-        { session, new: true }
+        updateOptions
       ).populate('driverId', 'name phone');
 
       if (updated) {
@@ -246,10 +269,15 @@ const findNearest = async (location, priority, excludeIds, session, hospital = n
       excludeIds,
     });
 
-    const broadCandidates = await Ambulance.find(broadFilter)
+    const broadQuery = Ambulance.find(broadFilter)
       .populate('driverId', 'name phone')
-      .session(session)
       .limit(5);
+
+    if (useTransaction && session) {
+      broadQuery.session(session);
+    }
+
+    const broadCandidates = await broadQuery;
 
     if (broadCandidates.length) {
       const requestStub = { location: { coordinates: location }, priority };
@@ -257,10 +285,15 @@ const findNearest = async (location, priority, excludeIds, session, hospital = n
       scored.sort((a, b) => b.score - a.score);
       const best = scored[0].ambulance;
 
+      const updateOptions = { new: true };
+      if (useTransaction && session) {
+        updateOptions.session = session;
+      }
+
       const updated = await Ambulance.findOneAndUpdate(
         { _id: best._id, status: AMBULANCE_STATUS.AVAILABLE },
         { status: AMBULANCE_STATUS.ASSIGNED },
-        { session, new: true }
+        updateOptions
       ).populate('driverId', 'name phone');
 
       if (updated) return updated;
@@ -274,20 +307,30 @@ const findNearest = async (location, priority, excludeIds, session, hospital = n
   scored.sort((a, b) => b.score - a.score);
   const best = scored[0].ambulance;
 
+  const updateOptions = { new: true };
+  if (useTransaction && session) {
+    updateOptions.session = session;
+  }
+
   const updated = await Ambulance.findOneAndUpdate(
     { _id: best._id, status: AMBULANCE_STATUS.AVAILABLE },
     { status: AMBULANCE_STATUS.ASSIGNED },
-    { session, new: true }
+    updateOptions
   ).populate('driverId', 'name phone');
 
   if (updated) return updated;
 
   for (let i = 1; i < scored.length; i++) {
     const next = scored[i].ambulance;
+    const updateOptions = { new: true };
+    if (useTransaction && session) {
+      updateOptions.session = session;
+    }
+
     const updatedNext = await Ambulance.findOneAndUpdate(
       { _id: next._id, status: AMBULANCE_STATUS.AVAILABLE },
       { status: AMBULANCE_STATUS.ASSIGNED },
-      { session, new: true }
+      updateOptions
     ).populate('driverId', 'name phone');
 
     if (updatedNext) return updatedNext;
@@ -303,16 +346,26 @@ const findNearest = async (location, priority, excludeIds, session, hospital = n
  * @param {import('mongoose').Document} ambulance
  * @param {import('mongoose').ClientSession} session
  */
-const writeAllocation = async (request, ambulance, session) => {
+const writeAllocation = async (request, ambulance, session, useTransaction = true) => {
   // Ambulance is already assigned atomically in findNearest
 
   // 2. Update the request
   request.status              = REQUEST_STATUS.ASSIGNED;
   request.assignedAmbulanceId = ambulance._id;
   request.allocationTime      = new Date();
-  await request.save({ session });
+
+  const saveOptions = {};
+  if (useTransaction && session) {
+    saveOptions.session = session;
+  }
+  await request.save(saveOptions);
 
   // 3. Create/update audit log
+  const logOptions = { upsert: true, new: true };
+  if (useTransaction && session) {
+    logOptions.session = session;
+  }
+
   await DispatchLog.findOneAndUpdate(
     { requestId: request._id },
     {
@@ -329,7 +382,7 @@ const writeAllocation = async (request, ambulance, session) => {
         },
       },
     },
-    { session, upsert: true, new: true }
+    logOptions
   );
 };
 
@@ -343,7 +396,7 @@ const writeAllocation = async (request, ambulance, session) => {
  * @param {import('mongoose').ClientSession} session
  * @returns {Promise<import('mongoose').Document|null>} The allocated ambulance, or null
  */
-const allocateAmbulance = async (request, session, hospital = null) => {
+const allocateAmbulance = async (request, session, useTransaction = true, hospital = null) => {
   logger.info('Starting ambulance allocation', {
     requestId: request._id.toString(),
     priority: request.priority,
@@ -375,7 +428,7 @@ const allocateAmbulance = async (request, session, hospital = null) => {
     driverId: ambulance.driverId?.toString(),
   });
 
-  await writeAllocation(request, ambulance, session);
+  await writeAllocation(request, ambulance, session, useTransaction);
   return ambulance;
 };
 
@@ -387,11 +440,13 @@ const allocateAmbulance = async (request, session, hospital = null) => {
  * @param {import('mongoose').ClientSession} session
  * @returns {Promise<import('mongoose').Document|null>} New ambulance, or null
  */
-const handleRejection = async (request, session) => {
+const handleRejection = async (request, session, useTransaction = true) => {
   // Collect all previously-rejected ambulance IDs from the dispatch log
-  const log = await DispatchLog.findOne({ requestId: request._id })
-    .session(session)
-    .lean();
+  const logQuery = DispatchLog.findOne({ requestId: request._id });
+  if (useTransaction && session) {
+    logQuery.session(session);
+  }
+  const log = await logQuery.lean();
 
   const previousAmbulanceIds = log
     ? [log.ambulanceId, ...(log.rejectedAmbulances || [])].filter(Boolean)
@@ -401,17 +456,32 @@ const handleRejection = async (request, session) => {
   const prevAmbulanceId       = request.assignedAmbulanceId;
   request.status              = REQUEST_STATUS.PENDING;
   request.assignedAmbulanceId = undefined;
-  await request.save({ session });
+
+  const saveOptions = {};
+  if (useTransaction && session) {
+    saveOptions.session = session;
+  }
+  await request.save(saveOptions);
 
   // Free the rejecting ambulance
   if (prevAmbulanceId) {
+    const updateOptions = {};
+    if (useTransaction && session) {
+      updateOptions.session = session;
+    }
+
     await Ambulance.findByIdAndUpdate(
       prevAmbulanceId,
       { status: AMBULANCE_STATUS.AVAILABLE },
-      { session }
+      updateOptions
     );
 
     // Record the rejection in the dispatch log
+    const logUpdateOptions = { upsert: true };
+    if (useTransaction && session) {
+      logUpdateOptions.session = session;
+    }
+
     await DispatchLog.findOneAndUpdate(
       { requestId: request._id },
       {
@@ -423,7 +493,7 @@ const handleRejection = async (request, session) => {
           },
         },
       },
-      { session, upsert: true }
+      logUpdateOptions
     );
   }
 
@@ -431,12 +501,14 @@ const handleRejection = async (request, session) => {
     request.location,
     request.priority,
     previousAmbulanceIds.map(String),
-    session
+    session,
+    null,
+    useTransaction
   );
 
   if (!nextAmbulance) return null;
 
-  await writeAllocation(request, nextAmbulance, session);
+  await writeAllocation(request, nextAmbulance, session, useTransaction);
   return nextAmbulance;
 };
 
@@ -447,18 +519,24 @@ const handleRejection = async (request, session) => {
  * @param {import('mongoose').ClientSession} session
  * @returns {Promise<{request: import('mongoose').Document, ambulance: import('mongoose').Document}|null>}
  */
-const allocateQueuedRequest = async (session) => {
-  const queuedRequest = await getNextQueuedRequest(session);
+const allocateQueuedRequest = async (sessionData) => {
+  const { session, useTransaction } = sessionData;
+  const queuedRequest = await getNextQueuedRequest(session, useTransaction);
   if (!queuedRequest) return null;
 
-  const request = await EmergencyRequest.findOne({
+  const query = EmergencyRequest.findOne({
     _id: queuedRequest._id,
     status: REQUEST_STATUS.PENDING,
-  }).session(session);
+  });
 
+  if (useTransaction && session) {
+    query.session(session);
+  }
+
+  const request = await query;
   if (!request) return null;
 
-  const ambulance = await allocateAmbulance(request, session);
+  const ambulance = await allocateAmbulance(request, session, useTransaction);
   if (!ambulance) return null;
 
   return { request, ambulance };

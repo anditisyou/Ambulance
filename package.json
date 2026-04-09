@@ -9,7 +9,9 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "jest --runInBand --forceExit",
+    "test": "jest --runInBand --forceExit --testPathIgnorePatterns=tests/integration",
+    "test:integration": "jest --runInBand --forceExit tests/integration",
+    "test:all": "jest --runInBand --forceExit",
     "test:cov": "jest --coverage --runInBand --forceExit",
     "lint": "eslint . --ext .js",
     "test:load": "node scripts/load-test.js",
@@ -53,7 +55,9 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "setupFilesAfterEnv": [],
+    "setupFilesAfterEnv": [
+      "<rootDir>/tests/env.setup.js"
+    ],
     "testMatch": [
       "**/tests/**/*.test.js"
     ],

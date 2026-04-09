@@ -1,3 +1,4 @@
+// jai jaaganath
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
@@ -23,14 +24,53 @@ const { Server } = require('socket.io');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./config/swagger');
 
-const { getPrometheusMetrics } = require('./utils/metrics');
+const { getPrometheusMetrics, getMetrics } = require('./utils/metrics');
 const errorHandler = require('./middleware/errorHandler');
 const logger = require('./utils/logger');
+
+let isTokenRevoked = async () => false;
+try {
+  const authModule = require('./middleware/auth');
+  if (typeof authModule.isTokenRevoked === 'function') {
+    isTokenRevoked = authModule.isTokenRevoked;
+  } else {
+    logger.warn('Socket token revocation checker not exported; continuing without revocation checks');
+  }
+} catch (err) {
+  logger.warn('Token revocation checker unavailable for sockets; continuing without revocation checks', {
+    error: err.message,
+  });
+}
+
+const buildRedisConnection = () => {
+  if (process.env.REDIS_URL) {
+    try {
+      const parsed = new URL(process.env.REDIS_URL);
+      return {
+        host: parsed.hostname,
+        port: Number(parsed.port || 6379),
+        username: parsed.username || undefined,
+        password: parsed.password || undefined,
+        tls: parsed.protocol === 'rediss:' ? {} : undefined,
+      };
+    } catch (err) {
+      logger.warn('Invalid REDIS_URL; falling back to REDIS_HOST/REDIS_PORT', { error: err.message });
+    }
+  }
+
+  return {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: Number(process.env.REDIS_PORT || 6379),
+    password: process.env.REDIS_PASSWORD || undefined,
+  };
+};
+
+const redisConnection = buildRedisConnection();
 
 // Validate environment variables
 const requiredEnvVars = ['JWT_SECRET', 'MONGODB_URI', 'SESSION_SECRET'];
 if (process.env.NODE_ENV === 'production') {
-  requiredEnvVars.push('REDIS_URL', 'FRONTEND_URL');
+  requiredEnvVars.push('FRONTEND_URL');
 }
 const missingEnvVars = requiredEnvVars.filter((v) => !process.env[v]);
 if (missingEnvVars.length > 0) {
@@ -104,15 +144,60 @@ const io = new Server(server, {
       return callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
-  }
+  },
+  transports: ['polling', 'websocket'],
+  allowEIO3: true,
 });
 
-if (process.env.REDIS_URL) {
-  const pubClient = new Redis(process.env.REDIS_URL);
+if (process.env.REDIS_URL || process.env.REDIS_HOST || process.env.REDIS_PORT) {
+  const adapterOptions = {
+    connectTimeout: 10000,
+    enableOfflineQueue: true, // Enable offline queue to prevent "Stream isn't writeable" errors
+    maxRetriesPerRequest: 3,
+    retryStrategy: (times) => Math.min(times * 50, 2000),
+    reconnectOnError: (err) => {
+      if (err.message.includes('ETIMEDOUT') || err.message.includes('ECONNRESET')) {
+        return true;
+      }
+      return false;
+    },
+    autoResubscribe: true,
+  };
+
+  const pubClient = new Redis(redisConnection, adapterOptions);
   const subClient = pubClient.duplicate();
-  io.adapter(createAdapter(pubClient, subClient));
-  pubClient.on('error', (err) => logger.warn('[Redis] Socket adapter error:', err.message));
-  subClient.on('error', (err) => logger.warn('[Redis] Socket adapter error:', err.message));
+
+  // Track readiness state
+  let pubReady = false;
+  let subReady = false;
+
+  const checkAndInitializeAdapter = () => {
+    if (pubReady && subReady) {
+      console.log('[Redis] Adapter initializing...');
+      io.adapter(createAdapter(pubClient, subClient));
+      logger.info('[Redis] Socket.IO Redis adapter initialized successfully');
+    }
+  };
+
+  const adapterRedisLogger = (clientName, err) => logger.warn(`[Redis] Socket adapter ${clientName} error:`, err.message || err);
+  pubClient.on('error', (err) => adapterRedisLogger('publisher', err));
+  subClient.on('error', (err) => adapterRedisLogger('subscriber', err));
+  pubClient.on('connect', () => logger.info('[Redis] Socket adapter publisher connected'));
+  subClient.on('connect', () => logger.info('[Redis] Socket adapter subscriber connected'));
+  pubClient.on('ready', () => {
+    logger.info('[Redis] Socket adapter publisher ready');
+    pubReady = true;
+    checkAndInitializeAdapter();
+  });
+  subClient.on('ready', () => {
+    logger.info('[Redis] Socket adapter subscriber ready');
+    subReady = true;
+    checkAndInitializeAdapter();
+  });
+  pubClient.on('close', () => logger.warn('[Redis] Socket adapter publisher closed'));
+  subClient.on('close', () => logger.warn('[Redis] Socket adapter subscriber closed'));
+  pubClient.on('reconnecting', (delay) => logger.warn('[Redis] Socket adapter publisher reconnecting in', delay, 'ms'));
+  subClient.on('reconnecting', (delay) => logger.warn('[Redis] Socket adapter subscriber reconnecting in', delay, 'ms'));
 }
 
 expressApp.set('io', io);
@@ -195,6 +280,12 @@ expressApp.use('/api', rateLimiter.middleware());
 
 // Database connection with retry logic
 let dispatchRecoveryInitialized = false;
+let mongoReadyResolved = false;
+let resolveMongoReady;
+
+const waitForMongoConnection = new Promise((resolve) => {
+  resolveMongoReady = resolve;
+});
 
 const initializeDispatchRecovery = async () => {
   if (dispatchRecoveryInitialized) return;
@@ -226,11 +317,13 @@ const connectWithRetry = async () => {
       retryWrites: true,         // Enable write retries for transactions
       retryReads: true,          // Auto-retry reads on transient failures
       waitQueueTimeoutMS: 10000, // Fail fast if no connections available
-      bufferMaxEntries: 0,       // Disable mongoose buffering
-      bufferCommands: false,     // Disable mongoose buffering
     });
     logger.info('MongoDB connected successfully');
     await initializeDispatchRecovery();
+    if (!mongoReadyResolved) {
+      mongoReadyResolved = true;
+      resolveMongoReady();
+    }
   } catch (err) {
     logger.error('MongoDB connection error:', err);
     logger.info('Retrying connection in 5 seconds...');
@@ -297,39 +390,45 @@ expressApp.get('/api-docs.json', (req, res) => {
 
 // Health check endpoint with detailed system status
 expressApp.get('/health', async (req, res) => {
+  const health = {
+    // Keep stable "ok" for orchestrator checks while exposing detailed state separately.
+    status: 'ok',
+    state: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    version: process.env.npm_package_version || '1.0.0',
+    environment: process.env.NODE_ENV || 'development',
+    checks: {},
+  };
+
   try {
-    const health = {
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      version: process.env.npm_package_version || '1.0.0',
-      environment: process.env.NODE_ENV || 'development',
-      checks: {}
-    };
-
-    // Database health check
-    try {
+    if (mongoose.connection?.db?.admin) {
       await mongoose.connection.db.admin().ping();
-      health.checks.database = { status: 'healthy', responseTime: Date.now() };
-    } catch (error) {
-      health.checks.database = { status: 'unhealthy', error: error.message };
-      health.status = 'degraded';
+      health.checks.database = { status: 'healthy' };
+    } else {
+      health.checks.database = { status: 'unhealthy', error: 'MongoDB connection not initialized' };
+      health.state = 'degraded';
     }
+  } catch (error) {
+    health.checks.database = { status: 'unhealthy', error: error.message };
+    health.state = 'degraded';
+  }
 
-    // Redis health check
-    if (redisClient) {
-      try {
-        await redisClient.ping();
-        health.checks.redis = { status: 'healthy', responseTime: Date.now() };
-      } catch (error) {
-        health.checks.redis = { status: 'unhealthy', error: error.message };
-        health.status = 'degraded';
-      }
+  try {
+    if (redisClient && typeof redisClient.ping === 'function') {
+      await redisClient.ping();
+      health.checks.redis = { status: 'healthy' };
+    } else {
+      health.checks.redis = { status: 'unavailable', error: 'Redis client not configured' };
     }
+  } catch (error) {
+    health.checks.redis = { status: 'unhealthy', error: error.message };
+    health.state = 'degraded';
+  }
 
-    // Memory usage
-    const memUsage = process.memoryUsage();
+  try {
     const memoryStats = memoryMonitor.getStats();
+    const memUsage = process.memoryUsage();
     health.checks.memory = {
       status: memUsage.heapUsed / memUsage.heapTotal > 0.9 ? 'warning' : 'healthy',
       used: memoryStats.heapUsed,
@@ -338,42 +437,66 @@ expressApp.get('/health', async (req, res) => {
       rss: memoryStats.rss,
       lastGC: memoryStats.lastGC,
     };
+  } catch (error) {
+    health.checks.memory = { status: 'unavailable', error: error.message };
+  }
 
-    // Load average (if available)
-    if (typeof process.cpuUsage === 'function') {
-      const cpuUsage = process.cpuUsage();
-      health.checks.cpu = {
-        status: 'healthy',
-        user: cpuUsage.user,
-        system: cpuUsage.system
-      };
-    }
-
-    // Queue health
-    const queueStats = await redisClient.keys('bull:*:waiting');
-    health.checks.queue = {
-      status: 'healthy',
-      waitingJobs: queueStats.length
-    };
-
-    // Response time based health
-    const avgResponseTime = metrics.getMetrics().avgResponseTime;
+  try {
+    const runtimeMetrics = getMetrics();
+    const avgResponseTime = runtimeMetrics?.avgResponseTime || 0;
     health.checks.performance = {
       status: avgResponseTime > 5000 ? 'warning' : 'healthy',
-      avgResponseTime: Math.round(avgResponseTime)
+      avgResponseTime: Math.round(avgResponseTime),
     };
-
-    const statusCode = health.status === 'healthy' ? 200 :
-                      health.status === 'degraded' ? 200 : 503; // degraded still returns 200 for load balancers
-
-    res.status(statusCode).json(health);
   } catch (error) {
-    res.status(503).json({
-      status: 'unhealthy',
-      timestamp: new Date().toISOString(),
-      error: error.message
-    });
+    health.checks.performance = { status: 'unavailable', error: error.message };
   }
+
+  return res.status(200).json(health);
+});
+
+// Readiness probe: strict dependency check for orchestrators.
+expressApp.get('/ready', async (req, res) => {
+  const readiness = {
+    status: 'ready',
+    timestamp: new Date().toISOString(),
+    checks: {
+      database: 'unknown',
+      redis: 'unknown',
+    },
+  };
+
+  let hasFailure = false;
+
+  try {
+    if (mongoose.connection?.readyState !== 1) {
+      throw new Error(`MongoDB not connected (readyState=${mongoose.connection?.readyState})`);
+    }
+    await mongoose.connection.db.admin().ping();
+    readiness.checks.database = 'ok';
+  } catch (err) {
+    readiness.checks.database = `failed: ${err.message}`;
+    hasFailure = true;
+  }
+
+  try {
+    if (redisClient && typeof redisClient.ping === 'function') {
+      await redisClient.ping();
+      readiness.checks.redis = 'ok';
+    } else {
+      readiness.checks.redis = 'skipped';
+    }
+  } catch (err) {
+    readiness.checks.redis = `failed: ${err.message}`;
+    hasFailure = true;
+  }
+
+  if (hasFailure) {
+    readiness.status = 'not_ready';
+    return res.status(503).json(readiness);
+  }
+
+  return res.status(200).json(readiness);
 });
 
 // 404 handler
@@ -501,37 +624,52 @@ io.on('connection', (socket) => {
   });
 });
 
-// Redis subscriber for cross-process socket events
-const subscriber = new Redis(process.env.REDIS_URL);
-subscriber.subscribe('socket-events', (err) => {
-  if (err) logger.error('Failed to subscribe to socket-events', err);
-  else logger.info('Subscribed to socket-events channel');
+// Log Socket.IO engine connection errors for diagnostics
+io.engine.on('connection_error', (err) => {
+  logger.warn('[Socket.IO] Engine connection error:', err.message || err);
 });
 
-subscriber.subscribe('socket-events-batch', (err) => {
-  if (err) logger.error('Failed to subscribe to socket-events-batch', err);
-  else logger.info('Subscribed to socket-events-batch channel');
-});
+// Redis subscriber for cross-process socket events.
+let subscriber = null;
+subscriber = new Redis(redisConnection);
 
-subscriber.on('message', (channel, message) => {
-  try {
-    if (channel === 'socket-events') {
-      const { room, event, data } = JSON.parse(message);
-      io.to(room).emit(event, data);
-      logger.debug('Emitted socket event from Redis', { room, event });
-    } else if (channel === 'socket-events-batch') {
-      const batch = JSON.parse(message);
-      // Process batched events
-      for (const eventData of batch) {
-        const { room, event, data } = eventData;
+const initializeSocketSubscriber = () => {
+  subscriber.subscribe('socket-events', (err) => {
+    if (err) logger.error('Failed to subscribe to socket-events', err);
+    else logger.info('Subscribed to socket-events channel');
+  });
+
+  subscriber.subscribe('socket-events-batch', (err) => {
+    if (err) logger.error('Failed to subscribe to socket-events-batch', err);
+    else logger.info('Subscribed to socket-events-batch channel');
+  });
+
+  subscriber.on('message', (channel, message) => {
+    try {
+      if (channel === 'socket-events') {
+        const { room, event, data } = JSON.parse(message);
         io.to(room).emit(event, data);
+        logger.debug('Emitted socket event from Redis', { room, event });
+      } else if (channel === 'socket-events-batch') {
+        const batch = JSON.parse(message);
+        for (const eventData of batch) {
+          const { room, event, data } = eventData;
+          io.to(room).emit(event, data);
+        }
+        logger.debug('Emitted batched socket events from Redis', { count: batch.length });
       }
-      logger.debug('Emitted batched socket events from Redis', { count: batch.length });
+    } catch (error) {
+      logger.error('Failed to parse socket event message', { error: error.message, channel });
     }
-  } catch (error) {
-    logger.error('Failed to parse socket event message', { error: error.message, channel });
-  }
-});
+  });
+};
+
+subscriber.on('connect', () => logger.info('[Socket subscriber] connected'));
+subscriber.on('ready', () => logger.info('[Socket subscriber] ready'));
+subscriber.on('error', (err) => logger.error('[Socket subscriber] error', err));
+subscriber.on('close', () => logger.warn('[Socket subscriber] closed'));
+
+initializeSocketSubscriber();
 
 // Graceful shutdown
 const gracefulShutdown = async (signal) => {
@@ -603,11 +741,21 @@ const gracefulShutdown = async (signal) => {
     await mongoose.disconnect();
     logger.info('MongoDB connection closed');
 
-    // 8. Exit cleanly
-    process.exit(0);
+    // 8. Exit cleanly (only in production)
+    const isProd = process.env.NODE_ENV === 'production';
+    if (isProd) {
+      process.exit(0);
+    } else {
+      console.warn('⚠️ Skipping process.exit() in development mode');
+    }
   } catch (err) {
     logger.error(`Shutdown error: ${err.message}`);
-    process.exit(1);
+    const isProd = process.env.NODE_ENV === 'production';
+    if (isProd) {
+      process.exit(1);
+    } else {
+      console.error('⚠️ Shutdown error in development mode:', err);
+    }
   }
 };
 
@@ -617,44 +765,53 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // Handle uncaught exceptions (final safety net)
 process.on('uncaughtException', (err) => {
-  logger.error('⚠️ Uncaught exception:', err);
+  console.error('UNCAUGHT EXCEPTION:', err.message);
+  console.error(err?.stack);
   gracefulShutdown('UNCAUGHT_EXCEPTION');
 });
 
 process.on('unhandledRejection', (reason) => {
-  logger.error('⚠️ Unhandled promise rejection:', reason);
+  console.error('UNHANDLED REJECTION:', reason);
+  console.error(reason?.stack);
   gracefulShutdown('UNHANDLED_REJECTION');
 });
 
 // Start server
 if (require.main === module) {
-  const PORT = process.env.PORT || 3000;
-  const httpServer = server.listen(PORT, () => {
-    logger.info(`Server running on port ${PORT}`);
-  });
+  const startApp = async () => {
+    await waitForMongoConnection;
+    const PORT = process.env.PORT || 3000;
+    const httpServer = server.listen(PORT, () => {
+      logger.info(`Server running on port ${PORT}`);
+    });
 
-  // Initialize production safety systems
-  try {
-    if (dataRetentionManager && dataRetentionManager.initialize) {
-      dataRetentionManager.initialize();
-      logger.info('✅ Data retention cleanup jobs initialized');
+    // Initialize production safety systems
+    try {
+      if (dataRetentionManager && dataRetentionManager.initialize) {
+        dataRetentionManager.initialize();
+        logger.info('✅ Data retention cleanup jobs initialized');
+      }
+    } catch (err) {
+      logger.error(`⚠️ Data retention init failed: ${err.message}`);
     }
-  } catch (err) {
-    logger.error(`⚠️ Data retention init failed: ${err.message}`);
-  }
 
-  // Start memory monitoring
-  try {
-    memoryMonitor.start();
-    logger.info('✅ Memory monitoring started');
-  } catch (err) {
-    logger.error(`⚠️ Memory monitoring init failed: ${err.message}`);
-  }
+    // Start memory monitoring
+    try {
+      memoryMonitor.start();
+      logger.info('✅ Memory monitoring started');
+    } catch (err) {
+      logger.error(`⚠️ Memory monitoring init failed: ${err.message}`);
+    }
 
-  // Global reference to io for offline driver manager
-  if (offlineDriverManager && offlineDriverManager.setIO) {
-    offlineDriverManager.setIO(io);
-  }
+    // Global reference to io for offline driver manager
+    if (offlineDriverManager && offlineDriverManager.setIO) {
+      offlineDriverManager.setIO(io);
+    }
+  };
+
+  startApp().catch((err) => {
+    logger.error('Failed to start server:', err);
+  });
 }
 
-module.exports = { expressApp, server };
+module.exports = { expressApp, server, waitForMongoConnection };

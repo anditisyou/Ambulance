@@ -16,7 +16,7 @@ RUN mkdir -p /app/uploads && chmod 755 /app/uploads
 # Expose port
 EXPOSE 3000
 
-# Health check
+# Health check (expects HTTP 200 from /health; payload includes status: "ok")
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/health', (r) => {r.statusCode === 200 ? process.exit(0) : process.exit(1)})"
 

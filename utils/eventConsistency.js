@@ -15,7 +15,25 @@ const redisConnection = {
   password: process.env.REDIS_PASSWORD || undefined,
 };
 
-const redis = new Redis(redisConnection);
+const redis = new Redis(redisConnection, {
+  connectTimeout: 10000,
+  enableOfflineQueue: false,
+  maxRetriesPerRequest: 3,
+  retryStrategy: (times) => Math.min(times * 50, 2000),
+  reconnectOnError: (err) => {
+    if (err.message.includes('ETIMEDOUT') || err.message.includes('ECONNRESET')) {
+      return true;
+    }
+    return false;
+  },
+  autoResubscribe: true,
+});
+
+redis.on('error', (err) => logger.warn('[EventConsistency Redis] Error:', err.message || err));
+redis.on('connect', () => logger.info('[EventConsistency Redis] Connected'));
+redis.on('ready', () => logger.info('[EventConsistency Redis] Ready'));
+redis.on('close', () => logger.warn('[EventConsistency Redis] Closed'));
+redis.on('reconnecting', (delay) => logger.warn('[EventConsistency Redis] Reconnecting in', delay, 'ms'));
 
 class EventConsistencyManager {
   constructor() {

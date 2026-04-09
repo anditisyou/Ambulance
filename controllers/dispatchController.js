@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const mongoose         = require('mongoose');
 const axios            = require('axios');
@@ -32,7 +32,7 @@ const {
   AMBULANCE_STATUS,
 } = require('../utils/constants');
 
-const OSRM_ROUTING_URL = process.env.OSRM_ROUTING_URL || process.env.OSRM_URL || 'http://router.project-osrm.org';
+const OSRM_ROUTING_URL = process.env.OSRM_ROUTING_URL || process.env.OSRM_URL || '';
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || '';
 const ROUTE_PROVIDER = process.env.ROUTE_PROVIDER || (GOOGLE_MAPS_API_KEY ? 'google' : 'osrm');
 
@@ -43,6 +43,53 @@ const routeCircuitBreaker = new CircuitBreaker({
 
 const dynamicScorer = new DynamicDispatchScorer();
 const loadShedder = new LoadShedder();
+
+const transactionUnsupportedError = /Transactions are not supported on the standalone server|transaction numbers are only allowed on a replica set/i;
+let mongoTransactionsSupported = null;
+
+const startTransactionSession = async () => {
+  let session = null;
+  let useTransaction = true;
+
+  try {
+    session = await mongoose.startSession();
+    session.startTransaction();
+    if (mongoTransactionsSupported !== true) {
+      logger.info('[Mongo] Running with transactions');
+      mongoTransactionsSupported = true;
+    }
+    return { session, useTransaction };
+  } catch (err) {
+    if (err.name === 'MongoServerError' && transactionUnsupportedError.test(err.message)) {
+      if (mongoTransactionsSupported !== false) {
+        logger.warn('[Mongo] Running WITHOUT transactions (standalone mode)', { error: err.message });
+        mongoTransactionsSupported = false;
+      }
+      useTransaction = false;
+      return { session: null, useTransaction };
+    }
+    if (session) session.endSession();
+    throw err;
+  }
+};
+
+const commitSession = async (sessionData) => {
+  if (!sessionData) return;
+  const { session, useTransaction } = sessionData;
+  if (useTransaction && session && session.inTransaction()) {
+    await session.commitTransaction();
+    session.endSession();
+  }
+};
+
+const abortSession = async (sessionData) => {
+  if (!sessionData) return;
+  const { session, useTransaction } = sessionData;
+  if (useTransaction && session && session.inTransaction()) {
+    await session.abortTransaction();
+    session.endSession();
+  }
+};
 
 const buildOsrmUrl = (from, to) => {
   const [fromLng, fromLat] = from;
@@ -72,6 +119,10 @@ const getRouteInfo = async (from, to) => {
       throw new Error(`Google Directions failed: ${response.data?.status || 'unknown'}`);
     }
 
+    if (!OSRM_ROUTING_URL) {
+      throw new Error('OSRM_ROUTING_URL not configured');
+    }
+
     const osrmUrl = buildOsrmUrl(from, to);
     const response = await axios.get(osrmUrl);
     if (response.data?.code === 'Ok' && Array.isArray(response.data.routes) && response.data.routes.length) {
@@ -92,13 +143,17 @@ const fallbackEta = (from, to) => {
 
 const estimateEta = async (from, to) => {
   const cacheKey = `eta:${from.join(',')}:${to.join(',')}`;
-  const cached = await redisClient.get(cacheKey);
+  const cached = redisClient && typeof redisClient.get === 'function'
+    ? await redisClient.get(cacheKey)
+    : null;
   if (cached) return parseInt(cached);
 
   try {
     const route = await getRouteInfo(from, to);
     const eta = route.duration;
-    await redisClient.setex(cacheKey, 3600, eta.toString()); // Cache for 1 hour
+    if (redisClient && typeof redisClient.setex === 'function') {
+      await redisClient.setex(cacheKey, 3600, eta.toString()); // Cache for 1 hour
+    }
     return eta;
   } catch (err) {
     logger.warn('Route ETA calculation failed, falling back to straight-line estimate', { error: err.message });
@@ -107,7 +162,8 @@ const estimateEta = async (from, to) => {
   }
 };
 
-const findAvailableHospital = async (location, requestType, session) => {
+const findAvailableHospital = async (location, requestType, sessionData) => {
+  const { session, useTransaction } = sessionData;
   const maxDistance = 50_000;
   const filter = {
     location: {
@@ -118,15 +174,23 @@ const findAvailableHospital = async (location, requestType, session) => {
     },
     isActive: true,
     capacityStatus: { $in: ['AVAILABLE', 'LIMITED'] },
+    // Ensure location data is valid
+    'location.type': 'Point',
+    'location.coordinates': { $exists: true, $size: 2 },
   };
 
   if (requestType && requestType !== REQUEST_TYPES.MEDICAL) {
     filter.specialties = { $in: [requestType] };
   }
 
-  return Hospital.findOne(filter)
-    .populate('userId', 'name email phone')
-    .session(session);
+  const query = Hospital.findOne(filter)
+    .populate('userId', 'name email phone');
+
+  if (useTransaction && session) {
+    query.session(session);
+  }
+
+  return query;
 };
 
 const emitDriverRoom = (io, driverId, event, payload) => {
@@ -137,17 +201,20 @@ const emitDriverRoom = (io, driverId, event, payload) => {
 };
 
 const processQueuedAssignment = async (io) => {
-  const queueSession = await mongoose.startSession();
-  queueSession.startTransaction();
+  let sessionData;
 
   try {
-    const result = await allocateQueuedRequest(queueSession);
+    sessionData = await startTransactionSession();
+    const { session, useTransaction } = sessionData;
+
+    const result = await allocateQueuedRequest(session, useTransaction);
+
     if (!result) {
-      await queueSession.abortTransaction();
+      await abortSession(sessionData);
       return null;
     }
 
-    await queueSession.commitTransaction();
+    await commitSession(sessionData);
 
     // Update real-time monitoring for ambulance and request
     await realtimeMonitor.updateAmbulanceStatus(
@@ -204,19 +271,14 @@ const processQueuedAssignment = async (io) => {
 
     return result;
   } catch (err) {
-    try {
-      if (queueSession.inTransaction()) await queueSession.abortTransaction();
-    } catch (abortErr) {
-      logger.error('Failed to abort transaction', abortErr);
-    }
-    logger.error('Failed to allocate queued request after ambulance became available', err);
+    if (sessionData) await abortSession(sessionData);
+
+    logger.error('Failed to allocate queued request', err);
     return null;
-  } finally {
-    queueSession.endSession();
   }
 };
 
-// ─── Internal helpers ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Internal helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Find the nearest available ambulance to the given [lng, lat] coordinates.
@@ -270,7 +332,7 @@ const assignAmbulance = async (request, ambulance, session) => {
   );
 };
 
-// ─── POST /api/dispatch/request ───────────────────────────────────────────────
+// â”€â”€â”€ POST /api/dispatch/request â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * @desc  Citizen raises a new SOS emergency request
@@ -278,8 +340,7 @@ const assignAmbulance = async (request, ambulance, session) => {
  * @access Private (Citizen)
  */
 exports.newRequest = async (req, res, next) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  let sessionData = null;
 
   let ambulance = null;
   let eta = null;
@@ -297,22 +358,7 @@ exports.newRequest = async (req, res, next) => {
       vitals,
     } = req.body;
 
-    // ── Load shedding: reject low-priority during extreme overload ──
-    const metrics = await getQueueStats();
-    loadShedder.updateStatus(metrics);
-    if (loadShedder.shouldShedRequest(priority)) {
-      const backoffMs = loadShedder.getBackoffTime();
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(503).json({
-        success: false,
-        message: 'System overload: please retry in ' + (backoffMs / 1000) + ' seconds',
-        backoffMs,
-        shedStatus: loadShedder.getStatus(),
-      });
-    }
-
-    // ── Validation ──
+    // â”€â”€ Validation first (fast-fail before queue/DB-heavy checks) â”€â”€
     if (latitude == null || longitude == null) {
       throw new AppError('latitude and longitude are required', 400);
     }
@@ -328,17 +374,47 @@ exports.newRequest = async (req, res, next) => {
       throw new AppError('Invalid coordinates', 400);
     }
 
-    // ── Prevent duplicate active request ──
-    const existingActive = await EmergencyRequest.findOne({
+    // â”€â”€ Load shedding: reject low-priority during extreme overload â”€â”€
+    let metrics = { waiting: 0, allocations: 0, rejections: 0 };
+    try {
+      metrics = await getQueueStats();
+    } catch (metricsErr) {
+      logger.warn('Unable to read dispatch queue metrics; skipping load shedding', {
+        error: metricsErr.message,
+      });
+    }
+
+    loadShedder.updateStatus(metrics);
+    if (process.env.NODE_ENV === 'production' && loadShedder.shouldShedRequest(priority)) {
+      const backoffMs = loadShedder.getBackoffTime();
+      return res.status(503).json({
+        success: false,
+        message: 'System overload: please retry in ' + (backoffMs / 1000) + ' seconds',
+        backoffMs,
+        shedStatus: loadShedder.getStatus(),
+      });
+    }
+    
+    sessionData = await startTransactionSession();
+    const { session, useTransaction } = sessionData;
+
+    // â”€â”€ Prevent duplicate active request â”€â”€
+    const existingQuery = EmergencyRequest.findOne({
       userId: req.user._id,
       status: { $in: ['PENDING', 'ASSIGNED', 'EN_ROUTE'] },
-    }).session(session);
+    });
+
+    if (useTransaction && session) {
+      existingQuery.session(session);
+    }
+
+    const existingActive = await existingQuery;
 
     if (existingActive) {
       throw new AppError('You already have an active emergency request', 400);
     }
 
-    // ── Anomaly detection ──
+    // â”€â”€ Anomaly detection â”€â”€
     const anomalies = await anomalyDetector.detectAnomalies({
       userId: req.user._id,
       location: { latitude: locLat, longitude: locLng },
@@ -358,8 +434,7 @@ exports.newRequest = async (req, res, next) => {
 
       // Block high-severity anomalies
       if (severity === 'high') {
-        await session.abortTransaction();
-        session.endSession();
+        await abortSession(sessionData);
         return res.status(403).json({
           success: false,
           message: 'Request blocked due to security concerns',
@@ -378,7 +453,12 @@ exports.newRequest = async (req, res, next) => {
 
     const location = { type: 'Point', coordinates: [locLng, locLat] };
 
-    // ── Create request ──
+    // â”€â”€ Create request â”€â”€
+    const createOptions = {};
+    if (useTransaction && session) {
+      createOptions.session = session;
+    }
+
     const [request] = await EmergencyRequest.create([{
       userId: req.user._id,
       userName: req.user.name,
@@ -399,22 +479,31 @@ exports.newRequest = async (req, res, next) => {
         oxygenSaturation: Number.isFinite(Number(vitals?.oxygenSaturation)) ? Number(vitals.oxygenSaturation) : undefined,
       },
       requestTime: new Date(),
-    }], { session });
+    }], createOptions);
 
-    const hospital = await findAvailableHospital(location, request.type, session);
+    const hospital = await findAvailableHospital(location, request.type, sessionData);
     if (hospital?.userId) {
       request.assignedHospital = hospital.userId;
-      await request.save({ session });
+      const saveOptions = {};
+      if (useTransaction && session) {
+        saveOptions.session = session;
+      }
+      await request.save(saveOptions);
     }
 
-    // ── Queue dispatch job instead of immediate allocation ──
+    // Commit only DB work first, then enqueue for dispatch.
+    await commitSession(sessionData);
+
     const priorityMap = { CRITICAL: 3, HIGH: 2, MEDIUM: 1, LOW: 0 };
     const jobPriority = priorityMap[request.priority] || 1;
-    await addDispatchJob(request._id.toString(), 'allocate', null, jobPriority);
-
-    // ✅ COMMIT ONLY DB WORK
-    await session.commitTransaction();
-    session.endSession();
+    try {
+      await addDispatchJob(request._id.toString(), 'allocate', null, jobPriority);
+    } catch (queueErr) {
+      logger.error('Failed to enqueue dispatch job after request commit', {
+        requestId: request._id.toString(),
+        error: queueErr.message,
+      });
+    }
 
     // Invalidate emergency-related cache immediately
     await cache.invalidateEmergencyData();
@@ -430,9 +519,9 @@ exports.newRequest = async (req, res, next) => {
       }
     );
 
-    // ─────────────────────────────
-    // 🔥 SAFE ZONE (NO TRANSACTION)
-    // ─────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ðŸ”¥ SAFE ZONE (NO TRANSACTION)
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     const io = req.app.get('io');
 
@@ -459,16 +548,13 @@ exports.newRequest = async (req, res, next) => {
     });
 
   } catch (err) {
-    // ✅ SAFE abort
-    if (session.inTransaction()) {
-      await session.abortTransaction();
-    }
-    session.endSession();
+    // âœ… SAFE abort
+    await abortSession(sessionData);
     next(err);
   }
 };
 
-// ─── PUT /api/dispatch/:id/response ──────────────────────────────────────────
+// â”€â”€â”€ PUT /api/dispatch/:id/response â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * @desc  Driver accepts or rejects their dispatch assignment
@@ -476,23 +562,33 @@ exports.newRequest = async (req, res, next) => {
  * @access Private (Driver)
  */
 exports.driverResponse = async (req, res, next) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  let sessionData;
 
   try {
+    sessionData = await startTransactionSession();
+    const { session, useTransaction } = sessionData;
+
     const { accept } = req.body;
     if (typeof accept !== 'boolean') {
       throw new AppError('"accept" must be a boolean', 400);
     }
 
-    const request = await EmergencyRequest.findById(req.params.id).session(session);
+    const requestQuery = EmergencyRequest.findById(req.params.id);
+    if (useTransaction && session) {
+      requestQuery.session(session);
+    }
+    const request = await requestQuery;
     if (!request) throw new AppError('Request not found', 404);
 
     if (request.status !== REQUEST_STATUS.ASSIGNED) {
       throw new AppError('This request is no longer available for response', 400);
     }
 
-    const myAmb = await Ambulance.findOne({ driverId: req.user._id }).session(session);
+    const ambulanceQuery = Ambulance.findOne({ driverId: req.user._id });
+    if (useTransaction && session) {
+      ambulanceQuery.session(session);
+    }
+    const myAmb = await ambulanceQuery;
     if (!myAmb) throw new AppError('Ambulance not found for this driver', 404);
 
     if (String(request.assignedAmbulanceId) !== String(myAmb._id)) {
@@ -505,14 +601,19 @@ exports.driverResponse = async (req, res, next) => {
     };
 
     if (!accept) {
+      const logOptions = { upsert: true };
+      if (useTransaction && session) {
+        logOptions.session = session;
+      }
+
       await DispatchLog.findOneAndUpdate(
         { requestId: request._id },
         { $push: { logs: logEntry }, responseTime: new Date() },
-        { session, upsert: true }
+        logOptions
       );
 
-      const nextAmb = await handleRejection(request, session);
-      await session.commitTransaction();
+      const nextAmb = await handleRejection(request, session, useTransaction);
+      await commitSession(sessionData);
 
       const io = req.app.get('io');
       if (io) {
@@ -543,17 +644,31 @@ exports.driverResponse = async (req, res, next) => {
 
       return res.status(200).json({
         success: true,
-        message: 'Assignment rejected — searching for next ambulance',
+        message: 'Assignment rejected â€” searching for next ambulance',
       });
     }
 
-    // ── Acceptance: transition to EN_ROUTE ──
+    // â”€â”€ Acceptance: transition to EN_ROUTE â”€â”€
     request.status         = REQUEST_STATUS.EN_ROUTE;
     request.allocationTime = request.allocationTime || new Date();
-    await request.save({ session });
+
+    const saveOptions = {};
+    if (useTransaction && session) {
+      saveOptions.session = session;
+    }
+    await request.save(saveOptions);
 
     myAmb.status = AMBULANCE_STATUS.EN_ROUTE;
-    await myAmb.save({ session });
+    const ambSaveOptions = {};
+    if (useTransaction && session) {
+      ambSaveOptions.session = session;
+    }
+    await myAmb.save(ambSaveOptions);
+
+    const logUpdateOptions = { upsert: true };
+    if (useTransaction && session) {
+      logUpdateOptions.session = session;
+    }
 
     await DispatchLog.findOneAndUpdate(
       { requestId: request._id },
@@ -562,10 +677,10 @@ exports.driverResponse = async (req, res, next) => {
         responseTime: new Date(),
         acceptedAt:   new Date(),
       },
-      { session, upsert: true }
+      logUpdateOptions
     );
 
-    await session.commitTransaction();
+    await commitSession(sessionData);
 
     const eta = await estimateEta(
       myAmb.currentLocation.coordinates,
@@ -591,14 +706,12 @@ exports.driverResponse = async (req, res, next) => {
 
     res.status(200).json({ success: true, data: request, message: 'Assignment accepted' });
   } catch (err) {
-    await session.abortTransaction();
+    await abortSession(sessionData);
     next(err);
-  } finally {
-    session.endSession();
   }
 };
 
-// ─── GET /api/dispatch/active ─────────────────────────────────────────────────
+// â”€â”€â”€ GET /api/dispatch/active â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * @desc  Get current active request for the authenticated citizen
@@ -637,7 +750,7 @@ exports.getActive = async (req, res, next) => {
   }
 };
 
-// ─── GET /api/dispatch/assignments ────────────────────────────────────────────
+// â”€â”€â”€ GET /api/dispatch/assignments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * @desc  Get active assignments for the current driver
@@ -680,7 +793,7 @@ exports.getAssignments = async (req, res, next) => {
   }
 };
 
-// ─── PATCH /api/dispatch/:id/track ────────────────────────────────────────────
+// â”€â”€â”€ PATCH /api/dispatch/:id/track â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * @desc  Driver updates position / status while en route
@@ -688,10 +801,11 @@ exports.getAssignments = async (req, res, next) => {
  * @access Private (Driver)
  */
 exports.track = async (req, res, next) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  let sessionData;
 
   try {
+    sessionData = await startTransactionSession();
+    const { session, useTransaction } = sessionData;
     const { id }                         = req.params;
     const { longitude, latitude, status, notes } = req.body;
 
@@ -703,7 +817,7 @@ exports.track = async (req, res, next) => {
       throw new AppError('Not authorised to track this request', 403);
     }
 
-    // ── Status transition ──
+    // â”€â”€ Status transition â”€â”€
     if (status) {
       if (!REQUEST_STATUS_VALUES.includes(status)) {
         throw new AppError('Invalid status value', 400);
@@ -730,7 +844,7 @@ exports.track = async (req, res, next) => {
       }
     }
 
-    // ── Location update ──
+    // â”€â”€ Location update â”€â”€
     let locationChanged = false;
     if (longitude != null && latitude != null) {
       const lng = parseFloat(longitude);
@@ -752,7 +866,7 @@ exports.track = async (req, res, next) => {
       }
     }
 
-    // ── Audit log ──
+    // â”€â”€ Audit log â”€â”€
     if (notes) {
       await DispatchLog.findOneAndUpdate(
         { requestId: request._id },
@@ -770,14 +884,14 @@ exports.track = async (req, res, next) => {
     }
 
     await request.save({ session });
-    await session.commitTransaction();
+    await commitSession(sessionData);
 
     const io = req.app.get('io');
     if (request.status === REQUEST_STATUS.COMPLETED && io) {
       await processQueuedAssignment(io);
     }
 
-    // ── Socket notifications ──
+    // â”€â”€ Socket notifications â”€â”€
     if (io) {
       if (status) {
         io.to(`request_${request._id}`).emit('statusUpdate', {
@@ -809,14 +923,14 @@ exports.track = async (req, res, next) => {
 
     res.status(200).json({ success: true, data: request });
   } catch (err) {
-    await session.abortTransaction();
+    if (sessionData) await abortSession(sessionData);
     next(err);
   } finally {
-    session.endSession();
+    if (sessionData?.session) sessionData.session.endSession();
   }
 };
 
-// ─── DELETE /api/dispatch/:id ─────────────────────────────────────────────────
+// â”€â”€â”€ DELETE /api/dispatch/:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * @desc  Citizen cancels their pending/assigned request
@@ -824,10 +938,11 @@ exports.track = async (req, res, next) => {
  * @access Private (Citizen)
  */
 exports.cancelRequest = async (req, res, next) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  let sessionData;
 
   try {
+    sessionData = await startTransactionSession();
+    const { session, useTransaction } = sessionData;
     const request = await EmergencyRequest.findById(req.params.id).session(session);
     if (!request) throw new AppError('Request not found', 404);
 
@@ -861,7 +976,7 @@ exports.cancelRequest = async (req, res, next) => {
       { session, upsert: true }
     );
 
-    await session.commitTransaction();
+    await commitSession(sessionData);
 
     const io = req.app.get('io');
     if (io) {
@@ -885,9 +1000,10 @@ exports.cancelRequest = async (req, res, next) => {
 
     res.status(200).json({ success: true, message: 'Request cancelled successfully' });
   } catch (err) {
-    await session.abortTransaction();
+    if (sessionData) await abortSession(sessionData);
     next(err);
   } finally {
-    session.endSession();
+    if (sessionData?.session) sessionData.session.endSession();
   }
 };
+

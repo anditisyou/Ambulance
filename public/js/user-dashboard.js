@@ -74,8 +74,11 @@ function initSocket() {
     const token = apiClient.authState.getToken();
     socket = io({
         path: '/socket.io',
-        transports: ['websocket', 'polling'],
+        transports: ['polling', 'websocket'],
         auth: { token },
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
     });
     
     socket.on('connect', () => {

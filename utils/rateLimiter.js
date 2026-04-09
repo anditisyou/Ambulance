@@ -7,6 +7,7 @@
  */
 
 const redisClient = require('./redisClient');
+const { isRedisAvailable } = require('./redisClient');
 
 class RateLimiter {
   constructor() {
@@ -74,6 +75,16 @@ class RateLimiter {
     const key = this.getKey(identifier, endpoint);
 
     try {
+      if (!isRedisAvailable() || !redisClient || typeof redisClient.zcard !== 'function') {
+        // Redis unavailable: fail open to preserve emergency request availability.
+        return {
+          allowed: true,
+          remaining: limits.maxRequests - 1,
+          resetTime: Date.now() + limits.windowMs,
+          limit: limits.maxRequests,
+        };
+      }
+
       // Use Redis sorted set to track requests with timestamps
       const now = Date.now();
       const windowStart = now - limits.windowMs;
@@ -143,6 +154,7 @@ class RateLimiter {
    */
   async cleanup() {
     try {
+      if (!redisClient || typeof redisClient.keys !== 'function') return;
       const keys = await redisClient.keys('ratelimit:*');
       const now = Date.now();
 
@@ -167,7 +179,7 @@ class RateLimiter {
     return async (req, res, next) => {
       try {
         const identifier = req.user?.id || req.ip || req.connection.remoteAddress;
-        const endpoint = req.path;
+        const endpoint = `${req.baseUrl || ''}${req.path}`.replace(/\/$/, '');
 
         const result = await this.checkLimit(identifier, endpoint, req.user);
 

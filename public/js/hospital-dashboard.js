@@ -127,7 +127,13 @@ window.addEventListener('beforeunload', () => {
 // Initialize Socket.IO
 function initSocket() {
     const token = apiClient.authState.getToken();
-    socket = io({ auth: { token } });
+    socket = io({
+        transports: ['polling', 'websocket'],
+        auth: { token },
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+    });
     const user = apiClient.authState.getUser();
     
     socket.on('connect', () => {
