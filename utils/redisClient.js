@@ -6,6 +6,16 @@
  * Supports both REDIS_URL and REDIS_HOST/REDIS_PORT formats.
  */
 let redisClient = null;
+
+try {
+  redisClient = require('redis').createClient({
+    url: process.env.REDIS_URL
+  });
+
+  redisClient.connect();
+} catch (err) {
+  console.log("Redis disabled");
+}
 let isRedisAvailable = false;
 
 const shouldLog = process.env.NODE_ENV !== 'test';
