@@ -4,7 +4,7 @@ const User             = require('../models/User');
 const Ambulance        = require('../models/Ambulance');
 const EmergencyRequest = require('../models/EmergencyRequest');
 const AppError         = require('../utils/AppError');
-const { ROLES, ROLES_VALUES, REQUEST_STATUS, AMBULANCE_STATUS_VALUES } = require('../utils/constants');
+const { ROLES, ROLES_VALUES, REQUEST_STATUS, AMBULANCE_STATUS_VALUES, SLA_TARGET_SECONDS } = require('../utils/constants');
 
 // ─── GET /api/admin/users ─────────────────────────────────────────────────────
 
@@ -226,6 +226,63 @@ exports.getSystemStats = async (req, res, next) => {
         activeRequests,
         completedToday,
         roleDistribution,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── GET /api/admin/dispatch-queue ───────────────────────────────────────────
+
+/**
+ * @desc  Get current dispatch queue and SLA risk summary
+ * @route GET /api/admin/dispatch-queue
+ * @access Private (Admin)
+ */
+exports.getDispatchQueue = async (req, res, next) => {
+  try {
+    const now = new Date();
+    const pending = await EmergencyRequest.find({
+      status: REQUEST_STATUS.PENDING,
+    })
+      .sort('requestTime')
+      .limit(100)
+      .lean();
+
+    const queue = pending.map((request) => {
+      const requestAgeSeconds = Math.max(0, (now - new Date(request.requestTime)) / 1000);
+      const slaTarget = SLA_TARGET_SECONDS[request.priority] ?? SLA_TARGET_SECONDS.MEDIUM;
+      const slaStatus = requestAgeSeconds > slaTarget
+        ? 'BREACHED'
+        : requestAgeSeconds > slaTarget * 0.75
+          ? 'AT_RISK'
+          : 'ON_TRACK';
+
+      return {
+        _id: request._id,
+        userName: request.userName,
+        userPhone: request.userPhone,
+        priority: request.priority,
+        requestTime: request.requestTime,
+        queuedAt: request.requestTime,
+        waitSeconds: Math.round(requestAgeSeconds),
+        slaTargetSeconds: slaTarget,
+        slaStatus,
+        location: request.location?.coordinates,
+        description: request.description,
+      };
+    });
+
+    const breachedCount = queue.filter((item) => item.slaStatus === 'BREACHED').length;
+
+    res.status(200).json({
+      success: true,
+      count: queue.length,
+      data: queue,
+      sla: {
+        breachedCount,
+        totalQueued: queue.length,
       },
     });
   } catch (err) {

@@ -52,6 +52,11 @@ const dispatchLogSchema = new mongoose.Schema(
       index:   true,
     },
 
+    rejectedAmbulances: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Ambulance',
+    }],
+
     /** Structured event log appended via $push. */
     logs: {
       type:    [logEntrySchema],
@@ -64,6 +69,7 @@ const dispatchLogSchema = new mongoose.Schema(
     acceptedAt:   Date,
     arrivedAt:    Date,
     completedAt:  Date,
+    queuedAt:     Date,
 
     notes: {
       type:      String,

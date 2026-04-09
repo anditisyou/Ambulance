@@ -1,12 +1,77 @@
+// Load constants from server
+async function loadConstants() {
+    try {
+        const response = await apiClient.get('/api/constants');
+        if (response.success) {
+            window.CONSTANTS = response.data;
+            console.log('Constants loaded:', window.CONSTANTS);
+        }
+    } catch (error) {
+        console.error('Failed to load constants:', error);
+    }
+}
+
+const isLandingPage = () => {
+    const path = window.location.pathname.replace(/\/+$/, '');
+    return path === '' || path === '/' || path === '/index.html';
+};
+
 // Check if user is already logged in
-document.addEventListener('DOMContentLoaded', function() {
-    const token = localStorage.getItem('token');
-    const user = JSON.parse(localStorage.getItem('user'));
-    
-    if (token && user) {
-        redirectToDashboard(user.role);
+document.addEventListener('DOMContentLoaded', async function() {
+    if (isLandingPage()) {
+        await loadConstants();
+        const user = apiClient.authState.getUser();
+
+        if (user) {
+            try {
+                const response = await apiClient.get('/api/auth/me');
+                if (response.success) {
+                    redirectToDashboard(user.role);
+                    return;
+                }
+            } catch (error) {
+                apiClient.authState.clear();
+            }
+        }
+    }
+
+    const registerPassword = document.getElementById('registerPassword');
+    const strengthBar = document.getElementById('passwordStrength');
+    if (registerPassword && strengthBar) {
+        registerPassword.addEventListener('input', function(e) {
+            const password = e.target.value;
+            if (password.length === 0) {
+                strengthBar.style.width = '0';
+                strengthBar.className = 'password-strength-bar';
+            } else if (password.length < 6) {
+                strengthBar.style.width = '33%';
+                strengthBar.className = 'password-strength-bar weak';
+            } else if (password.length < 10) {
+                strengthBar.style.width = '66%';
+                strengthBar.className = 'password-strength-bar medium';
+            } else {
+                strengthBar.style.width = '100%';
+                strengthBar.className = 'password-strength-bar strong';
+            }
+        });
     }
 });
+
+// Verify token with server
+async function verifyToken(token, user) {
+    try {
+        const response = await apiClient.get('/api/auth/me');
+
+        if (response.success) {
+            redirectToDashboard(user.role);
+        } else {
+            apiClient.authState.clear();
+        }
+    } catch (error) {
+        console.error('Token verification failed:', error);
+        apiClient.authState.clear();
+    }
+}
 
 // Login form handler
 const loginForm = document.getElementById('loginForm');
@@ -17,9 +82,13 @@ if (loginForm) {
         const credential = document.getElementById('loginEmail').value;
         const password = document.getElementById('loginPassword').value;
         
-        // decide if credential is phone or email
+        if (!credential || !password) {
+            showMessage('Please enter email/phone and password', 'danger');
+            return;
+        }
+        
         const payload = { password };
-        // ✅ CORRECT — matches 10 digits, or + followed by 7-15 digits
+        // Check if credential is phone (starts with + or contains only digits)
         if (/^\+?[0-9]{7,15}$/.test(credential.replace(/[\s\-]/g, ''))) {
             payload.phone = credential;
         } else {
@@ -27,33 +96,13 @@ if (loginForm) {
         }
 
         try {
-            const response = await fetch('/api/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(payload)
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                // Save token and user data
-                localStorage.setItem('token', data.token);
-                localStorage.setItem('user', JSON.stringify(data.user));
-                
-                // Show success message
-                showMessage('Login successful! Redirecting...', 'success');
-                
-                // Redirect based on role
-                setTimeout(function() {
-                    redirectToDashboard(data.user.role);
-                }, 1000);
-            } else {
-                showMessage(data.message, 'danger');
-            }
+            const data = await apiClient.post('/api/auth/login', payload);
+            apiClient.authState.setUser(data.user, data.token);
+
+            showMessage('Login successful! Redirecting...', 'success');
+            setTimeout(() => redirectToDashboard(data.user.role), 1000);
         } catch (error) {
-            showMessage('Error connecting to server', 'danger');
+            showMessage(error.message || 'Login failed', 'danger');
         }
     });
 }
@@ -71,40 +120,35 @@ if (registerForm) {
         const password = document.getElementById('registerPassword').value;
         const confirmPassword = document.getElementById('registerConfirmPassword').value;
         
-        // Validate passwords match
+        if (!name || !email || !phone || !role || !password) {
+            showMessage('All fields are required', 'danger');
+            return;
+        }
+        
         if (password !== confirmPassword) {
             showMessage('Passwords do not match', 'danger');
             return;
         }
         
+        if (password.length < 8) {
+            showMessage('Password must be at least 8 characters', 'danger');
+            return;
+        }
+        
         try {
-            const response = await fetch('/api/register', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ name, email, phone, role, password })
+            const data = await apiClient.post('/api/auth/register', {
+                name,
+                email,
+                phone,
+                role,
+                password,
             });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                // Save token and user data
-                localStorage.setItem('token', data.token);
-                localStorage.setItem('user', JSON.stringify(data.user));
-                
-                // Show success message
-                showMessage('Registration successful! Redirecting...', 'success');
-                
-                // Redirect based on role
-                setTimeout(function() {
-                    redirectToDashboard(data.user.role);
-                }, 1000);
-            } else {
-                showMessage(data.message, 'danger');
-            }
+
+            apiClient.authState.setUser(data.user, data.token);
+            showMessage('Registration successful! Redirecting...', 'success');
+            setTimeout(() => redirectToDashboard(data.user.role), 1000);
         } catch (error) {
-            showMessage('Error connecting to server', 'danger');
+            showMessage(error.message || 'Registration failed', 'danger');
         }
     });
 }
@@ -114,11 +158,14 @@ function showMessage(message, type) {
     const messageDiv = document.getElementById('message');
     if (messageDiv) {
         messageDiv.innerHTML = '<div class="alert alert-' + type + '">' + message + '</div>';
+        messageDiv.style.display = 'block';
+        setTimeout(() => {
+            messageDiv.style.display = 'none';
+        }, 3000);
     }
 }
 
 // Helper function to redirect based on role
-// ✅ CORRECT
 function redirectToDashboard(role) {
     switch(role) {
         case 'CITIZEN':     window.location.href = '/user-dashboard'; break;
@@ -130,9 +177,10 @@ function redirectToDashboard(role) {
     }
 }
 
-// Logout function (used across dashboards)
+// Logout function
 function logout() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    window.location.href = '/';
+    apiClient.authState.clear();
+    apiClient.post('/api/auth/logout').finally(() => {
+        window.location.href = '/';
+    });
 }

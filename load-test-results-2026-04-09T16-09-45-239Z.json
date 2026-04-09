@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-04-09T16:09:45.239Z",
+  "config": {
+    "duration": 60,
+    "maxUsers": 100,
+    "baseUrl": "http://localhost:3000/api"
+  },
+  "results": {
+    "duration": 61.328,
+    "totalRequests": 0,
+    "successfulRequests": 0,
+    "failedRequests": 0,
+    "successRate": 0,
+    "throughput": "0.00",
+    "avgResponseTime": 0,
+    "p50ResponseTime": "0.00",
+    "p95ResponseTime": "0.00",
+    "p99ResponseTime": "0.00",
+    "usersCreated": 0,
+    "emergenciesCreated": 0,
+    "topErrors": []
+  }
+}

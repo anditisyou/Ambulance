@@ -13,6 +13,7 @@ router.get('/users/:id',           ctrl.getUserById);
 router.put('/users/:id/role',      ctrl.updateUserRole);
 router.delete('/users/:id',        ctrl.deleteUser);
 router.get('/ambulances',          ctrl.getAllAmbulances);
+router.get('/dispatch-queue',      ctrl.getDispatchQueue);
 router.get('/stats',               ctrl.getSystemStats);
 
 module.exports = router;

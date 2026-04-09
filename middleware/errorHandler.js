@@ -62,7 +62,8 @@ const sendProdError = (err, res) => {
     });
   } else {
     // Unknown programming error — don't leak details
-    console.error('[ERROR] Non-operational error:', err);
+    console.error('[ERROR] Non-operational error:', err.name, err.message);
+    if (err.stack) console.error(err.stack);
     res.status(500).json({
       success: false,
       status:  'error',

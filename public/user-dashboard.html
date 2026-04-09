@@ -31,7 +31,6 @@
             min-height: 100vh;
         }
 
-        /* Modern Navbar */
         .navbar-modern {
             background: white;
             padding: 1rem 2rem;
@@ -128,14 +127,12 @@
             transform: translateY(-2px);
         }
 
-        /* Main Container */
         .dashboard-container {
             max-width: 1400px;
             margin: 2rem auto;
             padding: 0 2rem;
         }
 
-        /* Welcome Banner */
         .welcome-banner {
             background: white;
             border-radius: 20px;
@@ -168,6 +165,13 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .emergency-status:hover {
+            transform: scale(1.05);
+            background: #fecaca;
         }
 
         .emergency-status i {
@@ -180,8 +184,7 @@
             50% { transform: scale(1.1); }
             100% { transform: scale(1); }
         }
-
-        /* Action Cards */
+        
         .action-cards {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -244,7 +247,6 @@
             margin: 0;
         }
 
-        /* Active Emergency Alert */
         .active-emergency {
             background: linear-gradient(135deg, #fee2e2, #fecaca);
             border-radius: 16px;
@@ -286,6 +288,24 @@
             font-size: 1.5rem;
         }
 
+        .emergency-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.5rem;
+        }
+
+        .emergency-badge {
+            background: rgba(255, 255, 255, 0.9);
+            color: var(--danger);
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+        }
+
         .emergency-details h4 {
             font-size: 1.1rem;
             font-weight: 600;
@@ -307,7 +327,6 @@
             color: var(--danger);
         }
 
-        /* Medical Records Section */
         .records-section {
             background: white;
             border-radius: 20px;
@@ -395,6 +414,9 @@
             font-weight: 600;
             color: var(--dark);
             margin-bottom: 0.3rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .record-info p {
@@ -440,7 +462,6 @@
             opacity: 0.5;
         }
 
-        /* Modal Styles */
         .modal-content {
             border: none;
             border-radius: 20px;
@@ -474,6 +495,12 @@
         .upload-area:hover {
             border-color: var(--primary);
             background: #f8fafc;
+            transform: translateY(-2px);
+        }
+
+        .upload-area.border-primary {
+            border-color: var(--primary);
+            background: #f8fafc;
         }
 
         .upload-area i {
@@ -492,6 +519,34 @@
             color: var(--gray);
         }
 
+        #selectedFilePreview .card {
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .file-icon i {
+            transition: transform 0.3s ease;
+        }
+
+        .file-info h6 {
+            max-width: 250px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .progress {
             height: 8px;
             border-radius: 4px;
@@ -501,9 +556,24 @@
         .progress-bar {
             background: var(--gradient-primary);
             border-radius: 4px;
+            transition: width 0.3s ease;
         }
 
-        /* Responsive */
+        .progress-bar-striped {
+            background-image: linear-gradient(45deg, rgba(255,255,255,.15) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.15) 50%, rgba(255,255,255,.15) 75%, transparent 75%, transparent);
+            background-size: 1rem 1rem;
+        }
+
+        #uploadSubmitBtn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-outline-danger:hover {
+            background-color: #ef4444;
+            color: white;
+        }
+
         @media (max-width: 768px) {
             .navbar-container {
                 flex-direction: column;
@@ -544,11 +614,14 @@
                 flex-direction: column;
                 text-align: center;
             }
+            
+            .file-info h6 {
+                max-width: 150px;
+            }
         }
     </style>
 </head>
 <body>
-    <!-- Modern Navbar -->
     <nav class="navbar-modern">
         <div class="navbar-container">
             <a href="/" class="navbar-brand">
@@ -573,19 +646,17 @@
     </nav>
 
     <div class="dashboard-container">
-        <!-- Welcome Banner -->
         <div class="welcome-banner">
             <div class="welcome-text">
                 <h1>Welcome back, <span id="userFullName">User</span>!</h1>
                 <p>Your health and safety are our top priority</p>
             </div>
-            <div class="emergency-status" id="quickEmergency" onclick="triggerSOS()">
+            <div class="emergency-status" id="quickEmergency" onclick="showSOSModal()">
                 <i class="fas fa-exclamation-triangle"></i>
                 <span>Emergency SOS</span>
             </div>
         </div>
 
-        <!-- Active Emergency Alert -->
         <div id="activeEmergency" class="active-emergency" style="display: none;">
             <div class="emergency-info">
                 <div class="emergency-icon">
@@ -596,12 +667,16 @@
                     <p id="emergencyStatus">Status: PENDING</p>
                 </div>
             </div>
-            <div class="emergency-badge">
-                <i class="fas fa-clock me-2"></i>Awaiting Response
+            <div class="emergency-actions">
+                <div class="emergency-badge">
+                    <i class="fas fa-clock me-2"></i>Awaiting Response
+                </div>
+                <button id="cancelEmergencyBtn" class="btn btn-outline-danger btn-sm ms-3" onclick="cancelEmergency()" style="display: none;">
+                    <i class="fas fa-times me-1"></i>Cancel Request
+                </button>
             </div>
         </div>
 
-        <!-- Action Cards -->
         <div class="action-cards">
             <div class="action-card" onclick="showUploadModal()">
                 <div class="action-icon">
@@ -611,7 +686,7 @@
                 <p>Keep your medical history accessible for emergencies</p>
             </div>
 
-            <div class="action-card sos" onclick="triggerSOS()">
+            <div class="action-card sos" onclick="showSOSModal()">
                 <div class="action-icon">
                     <i class="fas fa-exclamation-triangle"></i>
                 </div>
@@ -628,7 +703,6 @@
             </div>
         </div>
 
-        <!-- Medical Records Section -->
         <section class="records-section">
             <div class="section-header">
                 <h2>
@@ -642,7 +716,6 @@
             </div>
 
             <div id="medicalRecords" class="records-grid">
-                <!-- Records will be loaded here dynamically -->
                 <div class="empty-records">
                     <i class="fas fa-folder-open"></i>
                     <p>No medical records found. Upload your first record to get started.</p>
@@ -651,8 +724,8 @@
         </section>
     </div>
 
-    <!-- Upload Modal -->
-    <div class="modal fade" id="uploadModal" tabindex="-1">
+    <!-- Enhanced Upload Modal -->
+    <div class="modal fade" id="uploadModal" tabindex="-1" aria-hidden="true" inert>
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
@@ -663,19 +736,53 @@
                 </div>
                 <div class="modal-body">
                     <form id="uploadForm">
-                        <div class="upload-area" onclick="document.getElementById('medicalFile').click()">
-                            <i class="fas fa-file-medical"></i>
-                            <p>Click to select or drag and drop</p>
-                            <p class="small">Supported formats: PDF, JPG, PNG (Max 10MB)</p>
-                            <input type="file" id="medicalFile" style="display: none;" accept=".pdf,.jpg,.jpeg,.png" required>
+                        <div class="upload-area" id="uploadArea">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p class="mb-2">Click to select or drag and drop</p>
+                            <p class="small text-muted">Supported formats: PDF, JPG, PNG (Max 10MB)</p>
+                            <input type="file" id="medicalFile" style="display: none;" accept=".pdf,.jpg,.jpeg,.png">
                         </div>
                         
-                        <div id="uploadProgress" class="progress mt-4" style="display: none;">
-                            <div class="progress-bar" role="progressbar" style="width: 0%">0%</div>
+                        <div id="selectedFilePreview" style="display: none;" class="mt-3">
+                            <div class="card border-0 bg-light">
+                                <div class="card-body p-3">
+                                    <div class="d-flex align-items-center justify-content-between">
+                                        <div class="d-flex align-items-center gap-3">
+                                            <div class="file-icon">
+                                                <i class="fas fa-file-pdf fa-2x text-danger"></i>
+                                            </div>
+                                            <div class="file-info">
+                                                <h6 class="mb-1 file-name" id="selectedFileName">No file selected</h6>
+                                                <small class="text-muted file-size" id="selectedFileSize">0 KB</small>
+                                            </div>
+                                        </div>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearSelectedFile()">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                    <div class="file-validation mt-2" id="fileValidation" style="display: none;">
+                                        <small class="text-danger">
+                                            <i class="fas fa-exclamation-triangle"></i>
+                                            <span id="validationMessage"></span>
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="uploadProgress" class="mt-3" style="display: none;">
+                            <div class="d-flex justify-content-between mb-1">
+                                <small>Uploading...</small>
+                                <small class="progress-percentage">0%</small>
+                            </div>
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                            </div>
+                            <small class="text-muted" id="uploadStatus">Preparing file...</small>
                         </div>
                         
                         <div class="mt-4">
-                            <button type="submit" class="btn btn-primary w-100 py-3">
+                            <button type="submit" class="btn btn-primary w-100 py-3" id="uploadSubmitBtn" disabled>
                                 <i class="fas fa-upload me-2"></i>Upload Record
                             </button>
                         </div>
@@ -685,8 +792,7 @@
         </div>
     </div>
 
-    <!-- Emergency History Modal -->
-    <div class="modal fade" id="historyModal" tabindex="-1">
+    <div class="modal fade" id="historyModal" tabindex="-1" aria-hidden="true" inert>
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
@@ -696,9 +802,57 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div id="emergencyHistory">
-                        <!-- History will be loaded here -->
-                    </div>
+                    <div id="emergencyHistory"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="sosModal" tabindex="-1" aria-hidden="true" inert>
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Emergency Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="sosForm" onsubmit="triggerSOS(); return false;">
+                        <div class="mb-3">
+                            <label for="sosDescription" class="form-label">What is happening?</label>
+                            <textarea id="sosDescription" class="form-control" rows="3" placeholder="Describe your condition or emergency."></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="sosAllergies" class="form-label">Allergies</label>
+                            <input id="sosAllergies" type="text" class="form-control" placeholder="e.g. penicillin, nuts">
+                        </div>
+                        <div class="mb-3">
+                            <label for="sosTriageNotes" class="form-label">Triage notes</label>
+                            <textarea id="sosTriageNotes" class="form-control" rows="2" placeholder="Any relevant symptoms or notes."></textarea>
+                        </div>
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <label for="sosHeartRate" class="form-label">Heart rate</label>
+                                <input id="sosHeartRate" type="number" class="form-control" placeholder="bpm">
+                            </div>
+                            <div class="col-6 mb-3">
+                                <label for="sosBloodPressure" class="form-label">Blood pressure</label>
+                                <input id="sosBloodPressure" type="text" class="form-control" placeholder="e.g. 120/80">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <label for="sosRespiratoryRate" class="form-label">Respiratory rate</label>
+                                <input id="sosRespiratoryRate" type="number" class="form-control" placeholder="breaths/min">
+                            </div>
+                            <div class="col-6 mb-3">
+                                <label for="sosOxygenSaturation" class="form-label">Oxygen saturation</label>
+                                <input id="sosOxygenSaturation" type="number" class="form-control" placeholder="%">
+                            </div>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-danger">Send Emergency SOS</button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
@@ -706,70 +860,9 @@
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="/js/apiClient.js"></script>
+    <script src="/js/auth.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
     <script src="/js/user-dashboard.js"></script>
-    <script>
-        function toggleProfileMenu() {
-            // Implement profile menu dropdown
-            console.log('Profile menu clicked');
-        }
-
-        function viewEmergencyHistory() {
-            // Load and show emergency history
-            loadEmergencyHistory();
-            $('#historyModal').modal('show');
-        }
-
-        async function loadEmergencyHistory() {
-            const token = localStorage.getItem('token');
-            try {
-                const response = await fetch('/api/emergency/history', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await response.json();
-                if (data.success) {
-                    displayEmergencyHistory(data.data);
-                }
-            } catch (error) {
-                console.error('Error loading history:', error);
-            }
-        }
-
-        function displayEmergencyHistory(history) {
-            const container = document.getElementById('emergencyHistory');
-            if (!history || history.length === 0) {
-                container.innerHTML = '<p class="text-center text-muted">No emergency history found.</p>';
-                return;
-            }
-
-            let html = '<div class="list-group">';
-            history.forEach(item => {
-                const date = new Date(item.createdAt).toLocaleString();
-                html += `
-                    <div class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="mb-1">Emergency Request</h6>
-                                <small>${date}</small>
-                            </div>
-                            <span class="badge bg-${getStatusColor(item.status)}">${item.status}</span>
-                        </div>
-                    </div>
-                `;
-            });
-            html += '</div>';
-            container.innerHTML = html;
-        }
-
-        function getStatusColor(status) {
-            switch(status) {
-                case 'PENDING': return 'warning';
-                case 'ACCEPTED': return 'success';
-                case 'COMPLETED': return 'info';
-                case 'CANCELLED': return 'danger';
-                default: return 'secondary';
-            }
-        }
-    </script>
 </body>
 </html>

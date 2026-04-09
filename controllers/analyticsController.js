@@ -132,6 +132,7 @@ exports.getLatencyMetrics = async (req, res, next) => {
     if (groupId) {
       pipeline.push({ $group: { _id: groupId, ...groupAccumulators } });
       pipeline.push({ $sort: sort });
+      pipeline.push({ $limit: 100 }); // Limit results to prevent memory issues
     } else {
       pipeline.push({ $group: { _id: null, ...groupAccumulators } });
     }

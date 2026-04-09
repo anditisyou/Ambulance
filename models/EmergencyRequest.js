@@ -50,6 +50,49 @@ const emergencyRequestSchema = new mongoose.Schema(
       default:   '',
     },
 
+    allergies: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+
+    vitals: {
+      heartRate: {
+        type: Number,
+        min: 0,
+      },
+      bloodPressure: {
+        type: String,
+        trim: true,
+      },
+      respiratoryRate: {
+        type: Number,
+        min: 0,
+      },
+      temperature: {
+        type: Number,
+        min: 25,
+        max: 45,
+      },
+      oxygenSaturation: {
+        type: Number,
+        min: 0,
+        max: 100,
+      },
+    },
+
+    triageNotes: {
+      type: String,
+      maxlength: [1000, 'Triage notes cannot exceed 1000 characters'],
+      default: '',
+    },
+
+    medicalHistorySummary: {
+      type: String,
+      maxlength: [1000, 'Medical history summary cannot exceed 1000 characters'],
+      default: '',
+    },
+
     /** GeoJSON Point — [longitude, latitude] */
     location: {
       type: {
@@ -96,6 +139,44 @@ const emergencyRequestSchema = new mongoose.Schema(
     },
 
     allocationTime: Date,
+
+    // ─── New state machine fields ─────────────────────────────────────────
+    // Tracks assignment state: PENDING → ASSIGNED → ACCEPTED → EN_ROUTE → COMPLETED
+    assignmentState: {
+      type:    String,
+      enum:    ['PENDING', 'ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'REJECTED'],
+      default: 'PENDING',
+      index:   true,
+    },
+
+    // Driver acceptance deadline (SLA timeout, typically 5min from assignment)
+    assignmentAcceptanceDeadline: Date,
+
+    // Timestamp when driver accepted the assignment
+    acceptedTime: Date,
+
+    // Timestamp when driver marked request as en-route
+    enRouteTime: Date,
+
+    // Driver location during en-route (GeoJSON Point for real-time tracking)
+    driverLocation: {
+      type: {
+        type:    String,
+        enum:    ['Point'],
+        default: 'Point',
+      },
+      coordinates: [Number], // [longitude, latitude]
+    },
+
+    // Driver rejection reason for audit/compliance
+    rejectionReason: {
+      type: String,
+      trim: true,
+    },
+
+    // Rejection timestamp for audit
+    rejectionTime: Date,
+
     completionTime: Date,
   },
   {
@@ -106,14 +187,19 @@ const emergencyRequestSchema = new mongoose.Schema(
 
 // ─── Geospatial index ─────────────────────────────────────────────────────────
 emergencyRequestSchema.index({ location: '2dsphere' });
+emergencyRequestSchema.index({ driverLocation: '2dsphere' });
 
-// ─── Dispatcher queue: fetch pending/high-priority first ─────────────────────
-emergencyRequestSchema.index({ status: 1, priority: -1, requestTime: 1 });
+// ─── State machine tracking ───────────────────────────────────────────────────
+emergencyRequestSchema.index({ assignmentState: 1, assignedAmbulanceId: 1 });
+emergencyRequestSchema.index({ assignmentAcceptanceDeadline: 1, assignmentState: 1 }, { sparse: true });
 
-// ─── Citizen history ──────────────────────────────────────────────────────────
-emergencyRequestSchema.index({ userId: 1, requestTime: -1 });
-
-// ─── Ambulance assignment lookups ────────────────────────────────────────────
-emergencyRequestSchema.index({ assignedAmbulanceId: 1, status: 1 }, { sparse: true });
+// ─── Performance indexes ──────────────────────────────────────────────────────
+emergencyRequestSchema.index({ status: 1, priority: -1, requestTime: 1 }); // Dispatcher queue
+emergencyRequestSchema.index({ userId: 1, requestTime: -1 }); // Citizen history
+emergencyRequestSchema.index({ assignedAmbulanceId: 1, status: 1 }, { sparse: true }); // Driver lookups
+emergencyRequestSchema.index({ assignedHospital: 1, status: 1 }, { sparse: true }); // Hospital lookups
+emergencyRequestSchema.index({ assignmentState: 1, assignmentAcceptanceDeadline: 1 }, { sparse: true }); // SLA monitoring
+emergencyRequestSchema.index({ createdAt: -1 }); // Recent requests
+emergencyRequestSchema.index({ updatedAt: -1 }); // Recent updates
 
 module.exports = mongoose.model('EmergencyRequest', emergencyRequestSchema);

@@ -43,11 +43,26 @@ const REQUEST_TYPES = Object.freeze({
 });
 const REQUEST_TYPES_VALUES = Object.values(REQUEST_TYPES);
 
+// ─── Service level targets for emergency requests ─────────────────────────────
+const SLA_TARGET_SECONDS = Object.freeze({
+  [REQUEST_PRIORITY.CRITICAL]: 300,
+  [REQUEST_PRIORITY.HIGH]:     600,
+  [REQUEST_PRIORITY.MEDIUM]:  1200,
+  [REQUEST_PRIORITY.LOW]:     1800,
+});
+
+const SLA_STATUS = Object.freeze({
+  ON_TRACK: 'ON_TRACK',
+  AT_RISK:  'AT_RISK',
+  BREACHED: 'BREACHED',
+});
+
 // ─── Ambulance status lifecycle ───────────────────────────────────────────────
 const AMBULANCE_STATUS = Object.freeze({
   AVAILABLE:   'AVAILABLE',
   ASSIGNED:    'ASSIGNED',
-  ENROUTE:     'ENROUTE',
+  EN_ROUTE:    'EN_ROUTE', // ✅ Consistent with frontend expectations
+  ENROUTE:     'EN_ROUTE', // Legacy compatibility alias
   BUSY:        'BUSY',
   MAINTENANCE: 'MAINTENANCE',
 });
@@ -56,6 +71,7 @@ const AMBULANCE_STATUS_VALUES = Object.values(AMBULANCE_STATUS);
 // ─── Dispatch log status ──────────────────────────────────────────────────────
 const DISPATCH_STATUS = Object.freeze({
   PENDING:   'PENDING',
+  QUEUED:    'QUEUED',
   ACTIVE:    'ACTIVE',
   COMPLETED: 'COMPLETED',
   CANCELLED: 'CANCELLED',
@@ -65,8 +81,8 @@ const DISPATCH_STATUS_VALUES = Object.values(DISPATCH_STATUS);
 // ─── Ambulance valid status transitions ───────────────────────────────────────
 const AMBULANCE_TRANSITIONS = Object.freeze({
   [AMBULANCE_STATUS.AVAILABLE]:   [AMBULANCE_STATUS.ASSIGNED, AMBULANCE_STATUS.MAINTENANCE],
-  [AMBULANCE_STATUS.ASSIGNED]:    [AMBULANCE_STATUS.ENROUTE,  AMBULANCE_STATUS.AVAILABLE],
-  [AMBULANCE_STATUS.ENROUTE]:     [AMBULANCE_STATUS.BUSY,     AMBULANCE_STATUS.AVAILABLE],
+  [AMBULANCE_STATUS.ASSIGNED]:    [AMBULANCE_STATUS.EN_ROUTE,  AMBULANCE_STATUS.AVAILABLE],
+  [AMBULANCE_STATUS.EN_ROUTE]:    [AMBULANCE_STATUS.BUSY,     AMBULANCE_STATUS.AVAILABLE],
   [AMBULANCE_STATUS.BUSY]:        [AMBULANCE_STATUS.AVAILABLE],
   [AMBULANCE_STATUS.MAINTENANCE]: [AMBULANCE_STATUS.AVAILABLE],
 });
@@ -92,4 +108,6 @@ module.exports = {
   DISPATCH_STATUS_VALUES,
   AMBULANCE_TRANSITIONS,
   REQUEST_TRANSITIONS,
+  SLA_TARGET_SECONDS,
+  SLA_STATUS,
 };

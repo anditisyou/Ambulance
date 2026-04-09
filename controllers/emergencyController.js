@@ -84,13 +84,13 @@ exports.getEmergencyRequests = async (req, res, next) => {
 
     const [requests, total] = await Promise.all([
       EmergencyRequest.find(query)
-        .populate('userId',              'name email phone')
+        .populate('userId', 'name email phone')
         .populate('assignedAmbulanceId', 'plateNumber driverId')
-        .populate('assignedHospital',    'name')
+        .populate('assignedHospital', 'name')
         .sort(sortBy)
         .skip(skip)
         .limit(limitNum)
-        .lean(),
+        .lean({ virtuals: false }), // Use lean for better performance
       EmergencyRequest.countDocuments(query),
     ]);
 
@@ -104,7 +104,8 @@ exports.getEmergencyRequests = async (req, res, next) => {
       ),
     ];
 
-    const driversMap = driverIds.length
+    // Only fetch drivers if we have any to fetch
+    const driversMap = driverIds.length > 0
       ? await User.find({ _id: { $in: driverIds } })
           .select('name phone')
           .lean()
@@ -146,28 +147,31 @@ exports.getEmergencyRequests = async (req, res, next) => {
 exports.getEmergencyRequest = async (req, res, next) => {
   try {
     const request = await EmergencyRequest.findById(req.params.id)
-      .populate('userId',              'name email phone')
-      .populate('assignedAmbulanceId')
-      .populate('assignedHospital',    'name email phone');
+      .populate('userId', 'name email phone')
+      .populate('assignedAmbulanceId', 'plateNumber driverId status')
+      .populate('assignedHospital', 'name email phone')
+      .lean({ virtuals: false }); // Use lean for performance
 
     if (!request) throw new AppError('Emergency request not found', 404);
 
     const isAuthorised =
       req.user.role === ROLES.ADMIN ||
       req.user.role === ROLES.DISPATCHER ||
-      String(request.userId?._id)             === String(req.user._id) ||
-      String(request.assignedHospital?._id)   === String(req.user._id) ||
+      String(request.userId?._id) === String(req.user._id) ||
+      String(request.assignedHospital?._id) === String(req.user._id) ||
       (request.assignedAmbulanceId &&
         String(request.assignedAmbulanceId.driverId) === String(req.user._id));
 
     if (!isAuthorised) throw new AppError('Not authorised to view this request', 403);
 
     // FIX: DispatchLog was previously used without being imported
-    const dispatchLog = await DispatchLog.findOne({ requestId: request._id }).lean();
+    const dispatchLog = await DispatchLog.findOne({ requestId: request._id })
+      .select('attempts result createdAt')
+      .lean();
 
     res.status(200).json({
       success: true,
-      data: { ...request.toObject(), dispatchLog: dispatchLog || null },
+      data: { ...request, dispatchLog: dispatchLog || null },
     });
   } catch (err) {
     next(err);

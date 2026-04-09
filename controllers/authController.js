@@ -88,6 +88,10 @@ exports.register = async (req, res, next) => {
 
     const token = generateToken(user._id);
     setTokenCookie(res, token);
+    if (req.session) {
+      req.session.userId = user._id;
+      req.session.role = user.role;
+    }
 
     res.status(201).json({
       success: true,
@@ -130,6 +134,10 @@ exports.login = async (req, res, next) => {
 
     const token = generateToken(user._id);
     setTokenCookie(res, token);
+    if (req.session) {
+      req.session.userId = user._id;
+      req.session.role = user.role;
+    }
 
     res.status(200).json({
       success: true,
@@ -172,7 +180,12 @@ exports.logout = async (req, res, next) => {
       await revokeToken(token);
     }
 
-    // Clear cookie — expire immediately
+    if (req.session) {
+      req.session.destroy(() => {
+        // no-op: destroy session state after logout
+      });
+    }
+
     res.clearCookie('token', {
       httpOnly: true,
       secure:   process.env.NODE_ENV === 'production',

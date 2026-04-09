@@ -1,20 +1,42 @@
 <<<<<<< HEAD
-# Emergency Response System — Production-Ready
+# 🚑 Emergency Response System — Production-Grade
 
-A real-time emergency dispatch platform built with **Node.js · Express · MongoDB · Socket.IO**.
+A **production-ready** real-time emergency dispatch platform built with **Node.js · Express · MongoDB · Socket.IO · Redis**.
+
+## ✨ Production-Grade Features
+
+### 🔧 Core Infrastructure
+- **Advanced Rate Limiting**: Redis-backed tiered rate limiting with sliding windows
+- **Real Alert Delivery**: Slack, email, and webhook notifications for system alerts
+- **Health Checks**: Comprehensive `/health` endpoint with system diagnostics
+- **Metrics Dashboard**: Real-time visualization at `/metrics-dashboard`
+- **Load Testing**: 1000-user simulation with detailed performance analysis
+
+### 🛡️ Security & Observability
+- **Enterprise Security**: Helmet.js, CORS, MongoDB sanitization, CSRF protection
+- **Advanced Monitoring**: Prometheus metrics export, structured logging
+- **Alert Management**: Multi-channel alerting with cooldown prevention
+- **Audit Compliance**: Immutable audit logs with tamper-proof records
+
+### ⚡ Performance & Scalability
+- **Horizontal Scaling**: Multi-instance deployment with Redis session sharing
+- **Queue Management**: BullMQ with priority queues and retry logic
+- **Load Shedding**: Graceful degradation under extreme load (10k+ users)
+- **Database Optimization**: Connection pooling, indexing, and query optimization
 
 ---
 
 ## Table of Contents
 1. [Architecture](#architecture)
 2. [Quick Start](#quick-start)
-3. [Environment Variables](#environment-variables)
-4. [API Reference](#api-reference)
-5. [Role System](#role-system)
-6. [Security Model](#security-model)
-7. [Running Tests](#running-tests)
-8. [Bug Fixes Applied](#bug-fixes-applied)
-9. [Deployment](#deployment)
+3. [Production Deployment](#production-deployment)
+4. [Environment Variables](#environment-variables)
+5. [API Reference](#api-reference)
+6. [Monitoring & Alerting](#monitoring--alerting)
+7. [Load Testing](#load-testing)
+8. [Security Model](#security-model)
+9. [Running Tests](#running-tests)
+10. [Deployment](#deployment)
 
 ---
 
@@ -226,6 +248,104 @@ node -e "require('./tests/system.test.js')"
 | `security.test.js` | 20 | Token extraction, password exposure, role injection, cookie config |
 
 **Total: 137 test cases across 6 test files**
+
+---
+
+## Monitoring & Alerting
+
+### Real-Time Metrics Dashboard
+Access live system metrics at: `http://localhost:3000/metrics-dashboard`
+
+**Key Metrics Monitored:**
+- Request rate and error rates
+- Response time percentiles (P50, P95, P99)
+- Queue depth and dispatch performance
+- Memory and CPU usage
+- Database connection health
+
+### Alert Channels
+- **Slack**: Real-time alerts to configured channels
+- **Email**: Critical error notifications
+- **Webhooks**: Integration with external monitoring systems
+- **Cooldown Protection**: Prevents alert spam (5-minute windows)
+
+### Health Check Endpoint
+```bash
+curl http://localhost:3000/health
+# Returns comprehensive system health status
+```
+
+---
+
+## Load Testing
+
+### Quick Load Test (100 users, 1 minute)
+```bash
+npm run test:load:quick
+```
+
+### Full Production Load Test (1000 users, 5 minutes)
+```bash
+npm run test:load:full
+```
+
+### Custom Load Test
+```bash
+node scripts/load-test.js [duration_seconds] [max_users]
+```
+
+**Load Test Features:**
+- Multi-threaded user simulation
+- Realistic user behavior patterns
+- Detailed performance metrics
+- Automated pass/fail criteria
+- Result export to JSON files
+
+---
+
+## Production Deployment
+
+### Environment Setup
+```bash
+# Required environment variables
+cp .env.example .env.production
+# Edit .env.production with production values
+
+# Install dependencies
+npm install
+
+# Run production build
+npm run build
+```
+
+### Docker Deployment
+```bash
+# Build production image
+docker build -t ers:latest .
+
+# Run with docker-compose
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+### Key Production URLs
+- **Application**: `https://your-domain.com`
+- **API Docs**: `https://your-domain.com/api-docs`
+- **Metrics**: `https://your-domain.com/metrics-dashboard`
+- **Health Check**: `https://your-domain.com/health`
+
+### Scaling Configuration
+```javascript
+// Auto-scaling triggers
+- CPU > 70%: Scale up instances
+- Memory > 80%: Scale up instances
+- Request rate > 1000/min: Scale up
+- Queue depth > 100: Scale up
+
+// Database scaling
+- MongoDB connection pool: 100 max
+- Redis cluster with replication
+- Read replicas for analytics
+```
 
 ---
 

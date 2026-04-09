@@ -1,14 +1,30 @@
 'use strict';
 
+const mongoose    = require('mongoose');
 const Ambulance  = require('../models/Ambulance');
 const AppError   = require('../utils/AppError');
 const { haversineDistance } = require('../utils/haversine');
+
+const emitDriverRoom = (io, driverId, event, payload) => {
+  if (!io || !driverId) return;
+  const target = String(driverId);
+  io.to(`driver_${target}`).emit(event, payload);
+  io.to(`user_${target}`).emit(event, payload);
+};
+
+const estimateEta = (from, to) => {
+  const distM = haversineDistance(from[1], from[0], to[1], to[0]);
+  const speedMs = (40 * 1000) / 3600;
+  return Math.round(distM / speedMs);
+};
+
 const {
   AMBULANCE_STATUS,
   AMBULANCE_STATUS_VALUES,
   AMBULANCE_TRANSITIONS,
   ROLES,
 } = require('../utils/constants');
+const { allocateQueuedRequest } = require('../utils/dispatchEngine');
 
 // ─── POST /api/ambulances ─────────────────────────────────────────────────────
 
@@ -31,7 +47,10 @@ exports.registerOrUpdate = async (req, res, next) => {
 
     // Validate and build location update
     let validatedLocation = null;
-    if (longitude !== undefined && latitude !== undefined) {
+    if (longitude !== undefined || latitude !== undefined) {
+      if (longitude === undefined || latitude === undefined) {
+        throw new AppError('Both latitude and longitude are required when updating location', 400);
+      }
       const lng = parseFloat(longitude);
       const lat = parseFloat(latitude);
       if (isNaN(lng) || isNaN(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90) {
@@ -65,11 +84,25 @@ exports.registerOrUpdate = async (req, res, next) => {
       updateData.equipment = equipment.map(String);
     }
 
-    const ambulance = await Ambulance.findOneAndUpdate(
-      { driverId },
-      updateData,
-      { new: true, upsert: isNew, runValidators: true, setDefaultsOnInsert: true }
-    ).populate('driverId', 'name email phone');
+    let ambulance;
+    if (isNew) {
+      ambulance = await Ambulance.create({
+        ...updateData,
+      });
+      ambulance = await Ambulance.findById(ambulance._id).populate('driverId', 'name email phone');
+    } else {
+      if (Array.isArray(existing.currentLocation?.coordinates) && existing.currentLocation.coordinates.length !== 2) {
+        existing.currentLocation = undefined;
+      }
+
+      if (validatedLocation) {
+        existing.currentLocation = validatedLocation;
+      }
+
+      Object.assign(existing, updateData);
+      ambulance = await existing.save();
+      ambulance = await Ambulance.findById(ambulance._id).populate('driverId', 'name email phone');
+    }
 
     res.status(isNew ? 201 : 200).json({ success: true, data: ambulance });
   } catch (err) {
@@ -196,6 +229,54 @@ exports.updateStatus = async (req, res, next) => {
 
     ambulance.status = status;
     await ambulance.save();
+
+    // Automatically allocate any pending request when an ambulance becomes available.
+    if (status === AMBULANCE_STATUS.AVAILABLE) {
+      const io = req.app.get('io');
+      const queueSession = await mongoose.startSession();
+      queueSession.startTransaction();
+
+      try {
+        const result = await allocateQueuedRequest(queueSession);
+        if (result) {
+          await queueSession.commitTransaction();
+
+          if (io) {
+            const queuedEta = estimateEta(
+              result.ambulance.currentLocation.coordinates,
+              result.request.location.coordinates
+            );
+
+            emitDriverRoom(io, result.ambulance.driverId, 'dispatchAssigned', {
+              requestId:   result.request._id,
+              location:    result.request.location,
+              priority:    result.request.priority,
+              eta:         Math.round(queuedEta / 60),
+              patientName: result.request.userName,
+              patientPhone: result.request.userPhone,
+            });
+
+            io.to(`user_${result.request.userId}`).emit('ambulanceAssigned', {
+              requestId:      result.request._id,
+              ambulanceId:    result.ambulance._id,
+              ambulancePlate: result.ambulance.plateNumber,
+              eta:             Math.round(queuedEta / 60),
+            });
+
+            io.to('admins').emit('dispatchAllocated', {
+              requestId:   result.request._id,
+              ambulanceId: result.ambulance._id,
+            });
+          }
+        } else {
+          await queueSession.abortTransaction();
+        }
+      } catch (err) {
+        if (queueSession.inTransaction()) await queueSession.abortTransaction();
+      } finally {
+        queueSession.endSession();
+      }
+    }
 
     // Broadcast to dispatchers
     const io = req.app.get('io');

@@ -40,12 +40,17 @@ const ambulanceSchema = new mongoose.Schema(
 
     currentLocation: {
       type: {
-        type:    String,
-        enum:    ['Point'],
-        default: 'Point',
+        type: String,
+        enum: ['Point'],
       },
       coordinates: {
         type: [Number], // [longitude, latitude]
+        validate: {
+          validator: function (coords) {
+            return coords == null || coords.length === 2;
+          },
+          message: 'Coordinates must be an array of two numbers',
+        },
       },
     },
 
@@ -66,10 +71,10 @@ const ambulanceSchema = new mongoose.Schema(
   }
 );
 
-// ─── 2dsphere index for $near / $geoWithin queries ────────────────────────────
-ambulanceSchema.index({ currentLocation: '2dsphere' });
-
-// ─── Compound index: dispatcher's "find nearest available" query ──────────────
-ambulanceSchema.index({ status: 1, currentLocation: '2dsphere' });
+// ─── Performance indexes ──────────────────────────────────────────────────────
+ambulanceSchema.index({ status: 1, currentLocation: '2dsphere' }); // Nearest available lookup
+ambulanceSchema.index({ driverId: 1 }); // Driver assignment lookup
+ambulanceSchema.index({ plateNumber: 1 }); // Unique plate lookup
+ambulanceSchema.index({ status: 1, updatedAt: -1 }); // Status monitoring
 
 module.exports = mongoose.model('Ambulance', ambulanceSchema);

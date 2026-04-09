@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hospital Dashboard - Emergency Response System</title>
+    <title>Ambulance Dashboard - Emergency Response System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -443,20 +443,11 @@
     <nav class="navbar-modern">
         <div class="navbar-container">
             <a href="/" class="navbar-brand">
-                <i class="fas fa-hospital"></i>
-                <span>ERS Hospital</span>
+                <i class="fas fa-ambulance"></i>
+                <span>ERS Ambulance</span>
             </a>
             
             <div class="hospital-info">
-                <button class="availability-toggle available" id="availabilityBtn" onclick="toggleAvailability()">
-                    <i class="fas fa-circle me-2"></i>Available
-                </button>
-                
-                <div class="hospital-details">
-                    <div class="name" id="hospitalName">Loading...</div>
-                    <div class="role">Hospital</div>
-                </div>
-                
                 <button class="logout-btn" onclick="logout()">
                     <i class="fas fa-sign-out-alt"></i>
                 </button>
@@ -465,6 +456,24 @@
     </nav>
 
     <div class="dashboard-container">
+        <!-- Driver Info -->
+<div class="driver-info" style="background: white; border-radius: 20px; padding: 1.5rem; margin-bottom: 2rem;">
+    <div class="row align-items-center">
+        <div class="col-md-6">
+            <h4 id="driverName">Loading...</h4>
+            <p class="text-muted mb-0">Ambulance Driver</p>
+            <p class="text-muted mb-0">Current location: <span id="driverLocation">Unknown</span></p>
+        </div>
+        <div class="col-md-6 text-end">
+            <span class="badge bg-info me-2" id="ambulanceStatus">Status: Loading...</span>
+            <button class="btn btn-sm btn-primary me-2" onclick="toggleStatus()" id="statusToggle">Toggle Status</button>
+            <button class="btn btn-sm btn-outline-primary me-2" onclick="showAmbulanceRegistrationModal()" id="registerAmbulanceBtn" style="display: none;">Register Ambulance</button>
+            <button class="btn btn-sm btn-success" onclick="updateLocation()" id="updateLocationBtn">
+                <i class="fas fa-location-dot me-1"></i>Update Location
+            </button>
+        </div>
+    </div>
+</div>
         <!-- Stats Grid -->
         <div class="stats-grid">
             <div class="stat-card">
@@ -535,7 +544,8 @@
                     <select class="filter-dropdown" id="statusFilter">
                         <option value="all">All Status</option>
                         <option value="PENDING">Pending</option>
-                        <option value="ACCEPTED">Accepted</option>
+                        <option value="ASSIGNED">Assigned</option>
+                        <option value="EN_ROUTE">En Route</option>
                         <option value="COMPLETED">Completed</option>
                     </select>
                 </div>
@@ -551,11 +561,12 @@
                             <th>Location</th>
                             <th>Priority</th>
                             <th>Status</th>
+                            <th>Hospital</th>
                             <th>Medical History</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="emergencyTableBody">
+                    <tbody id="missionsTableBody">
                         <tr>
                             <td colspan="8" class="text-center py-5">
                                 <div class="spinner-border text-primary" role="status">
@@ -571,7 +582,7 @@
     </div>
 
     <!-- Medical History Modal -->
-    <div class="modal fade" id="medicalHistoryModal" tabindex="-1">
+    <div class="modal fade" id="medicalHistoryModal" tabindex="-1" aria-hidden="true" inert>
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
@@ -589,138 +600,69 @@
         </div>
     </div>
 
+    <!-- Ambulance Registration Modal -->
+    <div class="modal fade" id="registerAmbulanceModal" tabindex="-1" aria-hidden="true" inert>
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Register Ambulance</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="ambulanceRegistrationForm" onsubmit="registerAmbulance(event)">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="plateNumber" class="form-label">Plate Number</label>
+                            <input type="text" class="form-control" id="plateNumber" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="ambulanceLatitude" class="form-label">Latitude</label>
+                            <input type="text" class="form-control" id="ambulanceLatitude" placeholder="e.g. 1.2921">
+                        </div>
+                        <div class="mb-3">
+                            <label for="ambulanceLongitude" class="form-label">Longitude</label>
+                            <input type="text" class="form-control" id="ambulanceLongitude" placeholder="e.g. 36.8219">
+                        </div>
+                        <div class="mb-3">
+                            <label for="ambulanceStatusInput" class="form-label">Status</label>
+                            <select class="form-select" id="ambulanceStatusInput">
+                                <option value="AVAILABLE" selected>AVAILABLE</option>
+                                <option value="MAINTENANCE">MAINTENANCE</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="ambulanceCapacity" class="form-label">Capacity</label>
+                            <input type="number" class="form-control" id="ambulanceCapacity" value="1" min="1">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Ambulance</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Location Modal -->
+<div class="modal fade" id="locationModal" tabindex="-1" aria-hidden="true" inert>
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Patient Location</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="locationModalBody">
+                <!-- Location will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <script src="/js/hospital-dashboard.js"></script>
-    <script>
-        let hospitalAvailable = true;
-
-        function toggleAvailability() {
-            hospitalAvailable = !hospitalAvailable;
-            const btn = document.getElementById('availabilityBtn');
-            
-            if (hospitalAvailable) {
-                btn.innerHTML = '<i class="fas fa-circle me-2"></i>Available';
-                btn.className = 'availability-toggle available';
-                updateHospitalStatus('available');
-            } else {
-                btn.innerHTML = '<i class="fas fa-circle me-2"></i>Busy';
-                btn.className = 'availability-toggle busy';
-                updateHospitalStatus('busy');
-            }
-        }
-
-        async function updateHospitalStatus(status) {
-            const token = localStorage.getItem('token');
-            try {
-                await fetch('/api/hospital/status', {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ status })
-                });
-            } catch (error) {
-                console.error('Error updating status:', error);
-            }
-        }
-
-        function refreshRequests() {
-            loadEmergencyRequests();
-        }
-
-        function exportData() {
-            // Implement export functionality
-            alert('Exporting data...');
-        }
-
-        function viewStatistics() {
-            // Implement statistics view
-            alert('Opening statistics...');
-        }
-
-        // Search functionality
-        document.getElementById('searchInput')?.addEventListener('input', function(e) {
-            const searchTerm = e.target.value.toLowerCase();
-            const rows = document.querySelectorAll('#emergencyTableBody tr');
-            
-            rows.forEach(row => {
-                if (row.cells.length > 1) {
-                    const patientName = row.cells[1]?.textContent.toLowerCase() || '';
-                    const phone = row.cells[2]?.textContent.toLowerCase() || '';
-                    row.style.display = (patientName.includes(searchTerm) || phone.includes(searchTerm)) ? '' : 'none';
-                }
-            });
-        });
-
-        // Filter functionality
-        document.getElementById('statusFilter')?.addEventListener('change', function(e) {
-            const filter = e.target.value;
-            const rows = document.querySelectorAll('#emergencyTableBody tr');
-            
-            rows.forEach(row => {
-                if (row.cells.length > 1) {
-                    const status = row.cells[5]?.textContent.trim() || '';
-                    if (filter === 'all' || status === filter) {
-                        row.style.display = '';
-                    } else {
-                        row.style.display = 'none';
-                    }
-                }
-            });
-        });
-
-        // Enhanced accept function with animation
-        window.acceptRequest = async function(requestId) {
-            if (!confirm('Are you sure you want to accept this emergency request?')) {
-                return;
-            }
-            
-            const token = localStorage.getItem('token');
-            const row = event.target.closest('tr');
-            
-            // Add loading state
-            row.style.opacity = '0.5';
-            
-            try {
-                const response = await fetch(`/api/emergency/${requestId}/accept`, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    // Show success notification
-                    showNotification('Request accepted successfully', 'success');
-                    loadEmergencyRequests();
-                } else {
-                    showNotification(data.message, 'error');
-                }
-            } catch (error) {
-                showNotification('Error accepting request', 'error');
-            } finally {
-                row.style.opacity = '1';
-            }
-        };
-
-        function showNotification(message, type) {
-            // Create notification element
-            const notification = document.createElement('div');
-            notification.className = `alert alert-${type === 'success' ? 'success' : 'danger'} position-fixed top-0 end-0 m-3`;
-            notification.style.zIndex = '9999';
-            notification.innerHTML = message;
-            
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-                notification.remove();
-            }, 3000);
-        }
-    </script>
+    <script src="/js/apiClient.js"></script>
+    <script src="/js/auth.js"></script>
+    <script src="/js/ambulance-dashboard.js"></script>
 </body>
 </html>

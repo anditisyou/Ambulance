@@ -11,10 +11,24 @@ const redisClient = require('../utils/redisClient');
  *       Always deploy Redis in multi-instance production environments.
  */
 const memoryBlacklist = new Set();
-const useRedis = !!(redisClient && typeof redisClient.get === 'function');
 
-if (!useRedis) {
-  console.warn('[Auth] Redis unavailable — using in-memory token blacklist');
+const isRedisConnected = () =>
+  redisClient &&
+  typeof redisClient.get === 'function' &&
+  redisClient.status === 'ready';
+
+const warnRedisFallback = (() => {
+  let emitted = false;
+  return () => {
+    if (!emitted) {
+      emitted = true;
+      console.warn('[Auth] Redis is not ready — using in-memory blacklist fallback');
+    }
+  };
+})();
+
+if (!redisClient) {
+  console.warn('[Auth] Redis client unavailable — using in-memory token blacklist');
 }
 
 // ─── Token revocation ─────────────────────────────────────────────────────────
@@ -35,9 +49,16 @@ const revokeToken = async (token) => {
     const ttl = decoded.exp - Math.floor(Date.now() / 1000);
     if (ttl <= 0) return true; // already expired — no-op
 
-    if (useRedis) {
-      await redisClient.setex(`bl:${token}`, ttl, '1');
+    if (isRedisConnected()) {
+      try {
+        await redisClient.setex(`bl:${token}`, ttl, '1');
+      } catch (err) {
+        console.warn('[Auth] Redis write failed — falling back to in-memory blacklist:', err.message);
+        memoryBlacklist.add(token);
+        setTimeout(() => memoryBlacklist.delete(token), ttl * 1000);
+      }
     } else {
+      warnRedisFallback();
       memoryBlacklist.add(token);
       setTimeout(() => memoryBlacklist.delete(token), ttl * 1000);
     }
@@ -57,14 +78,16 @@ const isTokenRevoked = async (token) => {
   if (!token) return true;
 
   try {
-    if (useRedis) {
+    if (isRedisConnected()) {
       const result = await redisClient.get(`bl:${token}`);
       return !!result;
     }
+
+    warnRedisFallback();
     return memoryBlacklist.has(token);
   } catch (err) {
     console.error('[Auth] isTokenRevoked error:', err.message);
-    return false; // fail-open — do not block a valid user on Redis glitch
+    return memoryBlacklist.has(token);
   }
 };
 
@@ -125,8 +148,10 @@ const protect = async (req, res, next) => {
     if (!user)            throw new AppError('User no longer exists', 401);
     if (!user.isActive)   throw new AppError('Account is deactivated', 401);
 
-    req.user  = user;
-    req.token = token;
+    req.user     = user;
+    req.userId   = user._id;
+    req.userRole = user.role;
+    req.token    = token;
     next();
   } catch (err) {
     next(err);
@@ -144,7 +169,11 @@ const optionalAuth = async (req, res, next) => {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         if (decoded?.id) {
           const user = await User.findById(decoded.id);
-          if (user?.isActive) req.user = user;
+          if (user?.isActive) {
+            req.user = user;
+            req.userId = user._id;
+            req.userRole = user.role;
+          }
         }
       } catch (_) {
         // silent — invalid token just means unauthenticated
@@ -203,4 +232,6 @@ const refreshToken = async (req, res, next) => {
   }
 };
 
-module.exports = { protect, optionalAuth, refreshToken, revokeToken };
+const authJwt = protect;
+
+module.exports = { protect, optionalAuth, refreshToken, revokeToken, isTokenRevoked, authJwt };

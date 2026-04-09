@@ -15,9 +15,10 @@ try {
   if (process.env.REDIS_URL) {
     const Redis = require('ioredis');
     redisClient = new Redis(process.env.REDIS_URL, {
-      lazyConnect:         true,
-      enableOfflineQueue:  false,
+      connectTimeout:       10000,
+      enableOfflineQueue:   false,
       maxRetriesPerRequest: 1,
+      retryStrategy: (times) => Math.min(times * 50, 2000),
     });
 
     redisClient.on('error', (err) => {
@@ -25,7 +26,11 @@ try {
     });
 
     redisClient.on('connect', () => {
-      console.info('[Redis] Connected successfully');
+      console.info('[Redis] Connected to Redis');
+    });
+
+    redisClient.on('ready', () => {
+      console.info('[Redis] Ready for commands');
     });
   } else {
     console.warn('[Redis] REDIS_URL not set — using in-memory token blacklist');

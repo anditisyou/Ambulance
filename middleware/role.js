@@ -81,4 +81,8 @@ const requireAllRoles = (...requiredRoles) => (req, res, next) => {
   }
 };
 
-module.exports = { authorize, authorizeOwner, requireAllRoles };
+const isAmbulance = authorize(ROLES.DRIVER);
+const isHospital = authorize(ROLES.HOSPITAL);
+const isAdmin = authorize(ROLES.ADMIN);
+
+module.exports = { authorize, authorizeOwner, requireAllRoles, isAmbulance, isHospital, isAdmin };

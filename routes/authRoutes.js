@@ -10,11 +10,11 @@ const { refreshToken } = require('../middleware/auth');
 // Public routes
 router.post('/register', authController.register);
 router.post('/login',    authController.login);
+router.post('/refresh',  refreshToken);
 
 // Private routes
 router.use(protect);
 router.get('/me',       authController.getMe);
 router.post('/logout',  authController.logout);
-router.post('/refresh', refreshToken);
 
 module.exports = router;
