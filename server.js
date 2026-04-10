@@ -1,4 +1,4 @@
-// jai jaaganath
+// jai jaaganath O!O
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
@@ -117,13 +117,29 @@ const server = http.createServer(expressApp);
 const FRONTEND_URL = process.env.FRONTEND_URL || null;
 const isDev = process.env.NODE_ENV !== 'production';
 
+const normalizeOrigin = (url) => {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ''}`;
+  } catch (_) {
+    return url.replace(/\/+$/, '');
+  }
+};
+
+const frontendOrigin = normalizeOrigin(FRONTEND_URL);
+
 const corsOptions = {
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    if (FRONTEND_URL) {
-      return origin === FRONTEND_URL ? callback(null, true) : callback(new Error('CORS origin denied'));
+    if (frontendOrigin) {
+      const requestOrigin = normalizeOrigin(origin);
+      if (requestOrigin === frontendOrigin) return callback(null, true);
+      logger.warn('CORS origin denied', { origin, requestOrigin, frontendOrigin });
+      return callback(new Error('CORS origin denied'));
     }
     if (isDev) return callback(null, true);
+    logger.warn('CORS origin denied', { origin, frontendOrigin });
     return callback(new Error('CORS origin denied'));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -137,10 +153,14 @@ const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      if (FRONTEND_URL) {
-        return origin === FRONTEND_URL ? callback(null, true) : callback(new Error('Not allowed by CORS'));
+      if (frontendOrigin) {
+        const requestOrigin = normalizeOrigin(origin);
+        if (requestOrigin === frontendOrigin) return callback(null, true);
+        logger.warn('Socket CORS origin denied', { origin, requestOrigin, frontendOrigin });
+        return callback(new Error('Not allowed by CORS'));
       }
       if (isDev) return callback(null, true);
+      logger.warn('Socket CORS origin denied', { origin, frontendOrigin });
       return callback(new Error('Not allowed by CORS'));
     },
     credentials: true,

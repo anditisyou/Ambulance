@@ -30,6 +30,48 @@ const logRedisEvent = (level, message, err = null) => {
   }
 };
 
+const createNoopRedisClient = () => {
+  const noop = async () => null;
+  const noopFalse = async () => false;
+  const noopScan = async () => ['0', []];
+
+  const client = {
+    status: 'down',
+    connect: noopFalse,
+    disconnect: noopFalse,
+    quit: noopFalse,
+    duplicate: () => client,
+    on: () => {},
+    once: () => {},
+    removeAllListeners: () => {},
+    ping: async () => { throw new Error('Redis unavailable'); },
+    config: async () => { throw new Error('Redis unavailable'); },
+    get: noop,
+    set: noop,
+    setex: noop,
+    del: noop,
+    incr: async () => 0,
+    expire: noop,
+    zadd: noop,
+    zcard: async () => 0,
+    zcount: async () => 0,
+    zremrangebyscore: noop,
+    keys: async () => [],
+    scan: noopScan,
+    xinfo: async () => { throw new Error('Redis unavailable'); },
+    xgroup: noop,
+    xadd: async () => null,
+    xrange: async () => [],
+    publish: noop,
+    subscribe: noop,
+    unsubscribe: noop,
+    evalsha: async () => null,
+    info: async () => '',
+  };
+
+  return client;
+};
+
 const performHealthCheck = async (client) => {
   try {
     // Check eviction policy
@@ -78,14 +120,12 @@ try {
 
     redisClient = new Redis(redisTarget, {
       connectTimeout: 10000,
-      enableOfflineQueue: false,
-      maxRetriesPerRequest: 3,
+      enableOfflineQueue: true,
+      maxRetriesPerRequest: 10,
       retryStrategy: (times) => Math.min(times * 50, 2000),
       reconnectOnError: (err) => {
-        if (err.message.includes('ETIMEDOUT') || err.message.includes('ECONNRESET')) {
-          return true;
-        }
-        return false;
+        const msg = err?.message || '';
+        return /ETIMEDOUT|ECONNRESET|ECONNREFUSED|EHOSTUNREACH|ECONNABORTED/.test(msg);
       },
       autoResubscribe: true,
     });
@@ -118,18 +158,13 @@ try {
     redisClient.on('reconnecting', (delay) => {
       logRedisEvent('WARNING', `Reconnecting in ${delay} ms`);
     });
-
-    // Prevent unhandled error events
-    redisClient.on('error', () => {
-      // Already logged above, prevent crash
-    });
-
-  } else if (shouldLog) {
-    console.warn('[Redis] REDIS not configured - running in degraded mode');
+  } else {
+    if (shouldLog) console.warn('[Redis] REDIS not configured - running in degraded mode');
+    redisClient = createNoopRedisClient();
   }
 } catch (err) {
   if (shouldLog) console.warn('[Redis] Failed to initialise - running in degraded mode:', err.message);
-  redisClient = null;
+  redisClient = createNoopRedisClient();
   isRedisAvailable = false;
 }
 
