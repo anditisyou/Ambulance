@@ -16,10 +16,16 @@ class NotificationService {
     this.twilioClient = null;
     this.slackWebhookUrl = null;
     this.webhookUrls = [];
+    this.isTestMode =
+      process.env.NODE_ENV === 'test' && process.env.ENABLE_NOTIFICATIONS_IN_TESTS !== 'true';
     this.init();
   }
 
   init() {
+    if (this.isTestMode) {
+      return;
+    }
+
     // Initialize email transporter if credentials exist
     if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       this.emailTransporter = nodemailer.createTransport({
@@ -71,6 +77,8 @@ class NotificationService {
    * @returns {Promise<boolean>}
    */
   async sendSMS(to, message) {
+    if (this.isTestMode) return false;
+
     if (!this.twilioClient) {
       console.warn('[Notification] SMS not sent — service unavailable');
       return false;
@@ -97,6 +105,8 @@ class NotificationService {
    * @returns {Promise<boolean>}
    */
   async sendSlack(message, channel = null) {
+    if (this.isTestMode) return false;
+
     if (!this.slackWebhookUrl) {
       console.warn('[Notification] Slack not sent — service unavailable');
       return false;
@@ -132,6 +142,8 @@ class NotificationService {
    * @returns {Promise<boolean>}
    */
   async sendWebhook(payload) {
+    if (this.isTestMode) return false;
+
     if (this.webhookUrls.length === 0) {
       console.warn('[Notification] Webhook not sent — no URLs configured');
       return false;
@@ -165,6 +177,8 @@ class NotificationService {
    * @returns {Promise<boolean>}
    */
   async sendEmail(to, subject, html) {
+    if (this.isTestMode) return false;
+
     if (!this.emailTransporter) {
       console.warn('[Notification] Email not sent — service unavailable');
       return false;

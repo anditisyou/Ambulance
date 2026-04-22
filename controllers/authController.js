@@ -5,6 +5,19 @@ const User         = require('../models/User');
 const { ROLES }    = require('../utils/constants');
 const { revokeToken } = require('../middleware/auth');
 const AppError     = require('../utils/AppError');
+const DB_OP_TIMEOUT_MS = parseInt(process.env.DB_OP_TIMEOUT_MS, 10) || 4000;
+
+const withTimeout = async (promiseLike, timeoutMs, timeoutMessage) => {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new AppError(timeoutMessage, 503)), timeoutMs);
+  });
+  try {
+    return await Promise.race([Promise.resolve(promiseLike), timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,9 +80,9 @@ exports.register = async (req, res, next) => {
     }
 
     // ── Uniqueness check ──
-    const existing = await User.findOne({
+    const existing = await withTimeout(User.findOne({
       $or: [{ email: email.toLowerCase().trim() }, { phone: phone.trim() }],
-    });
+    }), DB_OP_TIMEOUT_MS, 'Database timeout while checking existing user');
     if (existing) {
       throw new AppError('An account with this email or phone already exists', 400);
     }
@@ -121,7 +134,11 @@ exports.login = async (req, res, next) => {
       ? { phone: phone.trim() }
       : { email: email.toLowerCase().trim() };
 
-    const user = await User.findOne(query).select('+password');
+    // Support both real Mongoose query chains and unit-test stubs that return plain objects.
+    const findResult = User.findOne(query);
+    const user = findResult && typeof findResult.select === 'function'
+      ? await withTimeout(findResult.select('+password'), DB_OP_TIMEOUT_MS, 'Database timeout during login')
+      : await withTimeout(findResult, DB_OP_TIMEOUT_MS, 'Database timeout during login');
 
     // Generic message prevents user enumeration
     if (!user || !(await user.comparePassword(password))) {

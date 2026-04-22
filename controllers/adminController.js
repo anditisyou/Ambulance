@@ -86,11 +86,14 @@ exports.updateUserRole = async (req, res, next) => {
       throw new AppError('Cannot change your own role', 400);
     }
 
-    const user = await User.findByIdAndUpdate(
+    const updateResult = User.findByIdAndUpdate(
       req.params.id,
       { role },
       { new: true, runValidators: true }
-    ).select('-password');
+    );
+    const user = updateResult && typeof updateResult.select === 'function'
+      ? await updateResult.select('-password')
+      : await updateResult;
 
     if (!user) throw new AppError('User not found', 404);
 

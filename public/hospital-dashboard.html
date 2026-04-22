@@ -4,107 +4,363 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hospital Dashboard - Emergency Response System</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@3.4.2/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="./css/dashboard-theme.css">
+    <style>
+        :root {
+            --hospital-primary: #0f766e;
+            --hospital-primary-soft: #ccfbf1;
+            --hospital-ink: #12354c;
+            --hospital-muted: #486578;
+            --hospital-danger: #dc3545;
+            --hospital-warning: #d28716;
+        }
+
+        body {
+            min-height: 100vh;
+        }
+
+        .hospital-shell {
+            max-width: 1360px;
+            margin: 0 auto;
+            padding: 16px 16px 28px;
+        }
+
+        .hospital-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 18px;
+            margin-bottom: 18px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--hospital-ink);
+            font-weight: 800;
+            text-decoration: none;
+        }
+
+        .brand i {
+            color: var(--hospital-primary);
+            font-size: 1.35rem;
+        }
+
+        .hospital-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .hospital-name-pill {
+            background: linear-gradient(135deg, #ffffff, #eefdfa);
+            border: 1px solid #c9ede5;
+            color: var(--hospital-ink);
+            border-radius: 999px;
+            padding: 8px 14px;
+            font-weight: 700;
+            font-size: 0.92rem;
+        }
+
+        .btn-hospital {
+            background: linear-gradient(135deg, var(--hospital-primary), #13948a);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-weight: 700;
+        }
+
+        .hero-card {
+            border-radius: 20px;
+            padding: 22px;
+            margin-bottom: 18px;
+            background: linear-gradient(120deg, rgba(15, 118, 110, 0.16), rgba(16, 185, 129, 0.1));
+            border: 1px solid #c9ede5;
+        }
+
+        .hero-title {
+            font-size: 1.65rem;
+            color: var(--hospital-ink);
+            font-weight: 800;
+            margin-bottom: 6px;
+        }
+
+        .hero-sub {
+            color: var(--hospital-muted);
+            margin: 0;
+        }
+
+        .stat-row {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .stat-box {
+            border-radius: 16px;
+            padding: 18px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(255,255,255,0.88));
+            border: 1px solid #d4e8f6;
+            box-shadow: 0 8px 18px rgba(17, 32, 51, 0.08);
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--hospital-muted);
+            margin-bottom: 6px;
+            font-weight: 700;
+        }
+
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--hospital-ink);
+            line-height: 1.1;
+        }
+
+        .stat-note {
+            margin-top: 7px;
+            font-size: 0.82rem;
+            color: var(--hospital-muted);
+        }
+
+        .capacity-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: var(--hospital-primary-soft);
+            color: #0f4f4a;
+            font-size: 0.86rem;
+            font-weight: 700;
+        }
+
+        .request-panel {
+            border-radius: 20px;
+            padding: 20px;
+        }
+
+        .panel-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+
+        .panel-head h3 {
+            margin: 0;
+            color: var(--hospital-ink);
+            font-size: 1.22rem;
+            font-weight: 800;
+        }
+
+        .panel-controls {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .request-table-wrap {
+            overflow-x: auto;
+            border-radius: 14px;
+            border: 1px solid #d5e4ef;
+            background: #fff;
+        }
+
+        .request-table-wrap .table {
+            margin-bottom: 0;
+            min-width: 920px;
+        }
+
+        .request-table-wrap .table td,
+        .request-table-wrap .table th {
+            vertical-align: middle;
+        }
+
+        .request-table-wrap .table td small {
+            color: var(--hospital-muted);
+        }
+
+        .modal .modal-title {
+            font-weight: 800;
+            color: var(--hospital-ink);
+        }
+
+        @media (max-width: 992px) {
+            .stat-row {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 640px) {
+            .hospital-shell {
+                padding: 10px 10px 20px;
+            }
+
+            .hospital-nav {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .hospital-actions {
+                justify-content: space-between;
+            }
+
+            .hero-title {
+                font-size: 1.3rem;
+            }
+
+            .stat-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Navigation -->
-        <nav class="navbar">
-            <a href="/" class="navbar-brand">Emergency Response System</a>
-            <div class="navbar-menu">
-                <span id="hospitalName" class="navbar-item"></span>
-                <button id="logoutBtn" class="btn btn-danger">Logout</button>
+    <main class="hospital-shell">
+        <nav class="hospital-nav navbar">
+            <a href="/" class="brand">
+                <i class="fas fa-hospital-user"></i>
+                <span>ERS Hospital Console</span>
+            </a>
+            <div class="hospital-actions">
+                <span id="hospitalName" class="hospital-name-pill">Loading hospital...</span>
+                <button type="button" class="btn-hospital" onclick="refreshRequests()">
+                    <i class="fas fa-rotate me-1"></i>
+                    Refresh
+                </button>
+                <button id="logoutBtn" type="button" class="btn btn-danger">
+                    <i class="fas fa-right-from-bracket me-1"></i>
+                    Logout
+                </button>
             </div>
         </nav>
 
-        <!-- Dashboard Content -->
-        <div class="row">
-            <div class="col-md-12">
-                <div class="card">
-                    <h3 class="mb-4">Hospital Dashboard</h3>
-                    
-                    <!-- Statistics -->
-                    <div class="stats-grid">
-                        <div class="stat-card">
-                            <h3>Pending Requests</h3>
-                            <div class="stat-value" id="pendingCount">0</div>
-                        </div>
-                        <div class="stat-card">
-                            <h3>Accepted Today</h3>
-                            <div class="stat-value" id="acceptedCount">0</div>
-                        </div>
-                        <div class="stat-card">
-                            <h3>Total Completed</h3>
-                            <div class="stat-value" id="completedCount">0</div>
-                        </div>
-                        <div class="stat-card">
-                            <h3>Bed Capacity</h3>
-                            <div class="stat-value" id="hospitalCapacityStatus">Loading...</div>
-                            <button class="btn btn-sm btn-outline-primary mt-2" onclick="showBedUpdateModal()">Update Capacity</button>
-                        </div>
-                    </div>
+        <section class="hero-card">
+            <h1 class="hero-title">Emergency Intake & Capacity Coordination</h1>
+            <p class="hero-sub">Track incoming requests, assign beds fast, and keep dispatch informed in real time.</p>
+        </section>
 
-                    <!-- Emergency Requests Table -->
-                    <h4>Emergency Requests</h4>
-                    <div class="table-responsive">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Time</th>
-                                    <th>Patient Name</th>
-                                    <th>Phone</th>
-                                    <th>Location</th>
-                                    <th>Status</th>
-                                    <th>Medical History</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="emergencyTableBody">
-                                <tr>
-                                    <td colspan="7" class="text-center">Loading...</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Medical History Modal -->
-    <div class="modal fade" id="medicalHistoryModal" tabindex="-1" aria-hidden="true" inert>
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Patient Medical History</h5>
-                    <button type="button" class="close" data-dismiss="modal">
-                        <span>&times;</span>
+        <section class="stat-row">
+            <article class="stat-box">
+                <div class="stat-label">Pending Requests</div>
+                <div class="stat-value" id="pendingCount">0</div>
+                <div class="stat-note">Awaiting hospital acceptance</div>
+            </article>
+            <article class="stat-box">
+                <div class="stat-label">Accepted / Active</div>
+                <div class="stat-value" id="acceptedCount">0</div>
+                <div class="stat-note">Assigned and en route cases</div>
+            </article>
+            <article class="stat-box">
+                <div class="stat-label">Completed Cases</div>
+                <div class="stat-value" id="completedCount">0</div>
+                <div class="stat-note">Resolved emergency requests</div>
+            </article>
+            <article class="stat-box">
+                <div class="stat-label">Bed Capacity</div>
+                <div class="capacity-tag" id="hospitalCapacityStatus">Loading...</div>
+                <div class="mt-2">
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="showBedUpdateModal()">
+                        <i class="fas fa-bed-pulse me-1"></i>
+                        Update Capacity
                     </button>
                 </div>
+            </article>
+        </section>
+
+        <section class="request-panel card">
+            <div class="panel-head">
+                <h3>
+                    <i class="fas fa-triangle-exclamation text-danger me-2"></i>
+                    Emergency Requests Queue
+                </h3>
+                <div class="panel-controls">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="viewStatistics()">
+                        <i class="fas fa-chart-line me-1"></i>
+                        Statistics
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="exportData()">
+                        <i class="fas fa-file-arrow-down me-1"></i>
+                        Export
+                    </button>
+                </div>
+            </div>
+            <div class="request-table-wrap">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Patient</th>
+                            <th>Phone</th>
+                            <th>Location</th>
+                            <th>Priority</th>
+                            <th>Status</th>
+                            <th>History</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="emergencyTableBody">
+                        <tr>
+                            <td colspan="8" class="text-center py-4">
+                                <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                                Loading emergency requests...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <div class="modal fade" id="medicalHistoryModal" tabindex="-1" aria-hidden="true" inert>
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-notes-medical me-2 text-primary"></i>
+                        Patient Medical History
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
                 <div class="modal-body">
-                    <div id="medicalHistoryContent">
-                        <!-- Medical records will be loaded here -->
-                    </div>
+                    <div id="medicalHistoryContent"></div>
                 </div>
             </div>
         </div>
     </div>
 
     <div class="modal fade" id="bedUpdateModal" tabindex="-1" aria-hidden="true" inert>
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="fas fa-procedures me-2"></i>Update Bed Capacity</h5>
-                    <button type="button" class="close" data-dismiss="modal">
-                        <span>&times;</span>
-                    </button>
+                    <h5 class="modal-title">
+                        <i class="fas fa-procedures me-2 text-primary"></i>
+                        Update Bed Capacity
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <form id="bedUpdateForm" onsubmit="submitBedUpdate(event)">
                         <div id="bedFieldsContainer"></div>
                         <div class="mt-3">
-                            <button type="submit" class="btn btn-primary w-100">Save Capacity</button>
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="fas fa-floppy-disk me-2"></i>
+                                Save Capacity
+                            </button>
                         </div>
                     </form>
                 </div>
@@ -112,9 +368,8 @@
         </div>
     </div>
 
-    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/js/apiClient.js"></script>
     <script src="/js/auth.js"></script>
     <script src="/socket.io/socket.io.js"></script>

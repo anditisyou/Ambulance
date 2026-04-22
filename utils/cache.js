@@ -5,8 +5,11 @@
  * Redis-based caching utility for API responses
  */
 
-const redisClient = require('./redisClient');
-const { isRedisAvailable } = require('./redisClient');
+const redisModule = require('./redisClient');
+const redisClient = redisModule && typeof redisModule === 'object' ? redisModule : null;
+const isRedisAvailable = redisModule && typeof redisModule.isRedisAvailable === 'function'
+  ? redisModule.isRedisAvailable
+  : () => false;
 const logger = require('./logger');
 
 class Cache {

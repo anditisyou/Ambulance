@@ -13,7 +13,7 @@
     "test:integration": "jest --runInBand --forceExit tests/integration",
     "test:all": "jest --runInBand --forceExit",
     "test:cov": "jest --coverage --runInBand --forceExit",
-    "lint": "eslint . --ext .js",
+    "lint": "node scripts/lint.js",
     "test:load": "node scripts/load-test.js",
     "test:load:quick": "node scripts/load-test.js 60 100",
     "test:load:full": "node scripts/load-test.js 300 1000"

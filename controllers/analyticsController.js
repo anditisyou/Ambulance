@@ -181,7 +181,9 @@ exports.getLatencyMetrics = async (req, res, next) => {
  */
 exports.getPerformanceMetrics = async (req, res, next) => {
   try {
-    const days      = Math.min(365, Math.max(1, parseInt(req.query.days, 10) || 30));
+    const parsedDays = parseInt(req.query.days, 10);
+    const daysInput = Number.isNaN(parsedDays) ? 30 : parsedDays;
+    const days      = Math.min(365, Math.max(1, daysInput));
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 

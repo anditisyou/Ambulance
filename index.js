@@ -2,7 +2,7 @@
 'use strict';
 
 require('dotenv').config();
-const { server, waitForMongoConnection } = require('./server');
+const { expressApp, server, waitForMongoConnection } = require('./server');
 
 const PORT = process.env.PORT || 3000;
 
@@ -17,4 +17,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { server };
+module.exports = { app: expressApp, expressApp, server };

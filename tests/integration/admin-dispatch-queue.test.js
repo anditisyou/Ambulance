@@ -3,9 +3,11 @@
 const mongoose = require('mongoose');
 const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+jest.setTimeout(30000);
 
 let mongoServer;
 let app;
+let serverModule;
 
 const authHeader = (token) => ({ Authorization: `Bearer ${token}` });
 
@@ -17,18 +19,17 @@ beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   process.env.MONGODB_URI = mongoServer.getUri();
 
-  const serverModule = require('../../server');
+  serverModule = require('../../server');
   app = serverModule.expressApp;
-
-  await mongoose.connect(process.env.MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  });
+  await serverModule.waitForMongoConnection;
 });
 
 afterAll(async () => {
-  await mongoose.connection.close();
+  await mongoose.disconnect();
   await mongoServer.stop();
+  if (serverModule?.server?.listening) {
+    await new Promise((resolve) => serverModule.server.close(resolve));
+  }
 });
 
 afterEach(async () => {

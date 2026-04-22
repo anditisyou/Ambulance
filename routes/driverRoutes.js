@@ -11,11 +11,32 @@ const { AuditLogger } = require('../models/AuditLog');
 const eventConsistency = require('../utils/eventConsistency');
 const redisClient = require('../utils/redisClient');
 const locationSmoother = require('../utils/locationSmoother');
-const offlineDriverManager = require('../utils/offlineDriverManager');
 const { v4: uuidv4 } = require('uuid');
 const haversine = require('../utils/haversine');
 const logger = require('../utils/logger');
 const io = require('../utils/socketIO');
+
+let offlineDriverManagerModule = null;
+const shouldUseOfflineDriverManager =
+  process.env.NODE_ENV !== 'test' || process.env.ENABLE_OFFLINE_DRIVER_MANAGER_IN_TESTS === 'true';
+
+const getOfflineDriverManager = () => {
+  if (!shouldUseOfflineDriverManager) {
+    return {
+      recordHeartbeat: async () => {},
+      handleDriverReconnect: async () => ({
+        offlineDurationMs: 0,
+        processedEvents: 0,
+      }),
+    };
+  }
+
+  if (!offlineDriverManagerModule) {
+    offlineDriverManagerModule = require('../utils/offlineDriverManager');
+  }
+
+  return offlineDriverManagerModule;
+};
 
 /**
  * PATCH /api/driver/location
@@ -335,7 +356,7 @@ router.post(
       }
 
       // Record heartbeat
-      await offlineDriverManager.recordHeartbeat(ambulance._id, driverId);
+      await getOfflineDriverManager().recordHeartbeat(ambulance._id, driverId);
 
       res.json({ 
         success: true,
@@ -367,7 +388,7 @@ router.post(
       }
 
       // Handle reconnection
-      const reconnectStatus = await offlineDriverManager.handleDriverReconnect(
+      const reconnectStatus = await getOfflineDriverManager().handleDriverReconnect(
         ambulance._id,
         driverId
       );

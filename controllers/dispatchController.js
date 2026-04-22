@@ -4,24 +4,15 @@ const mongoose         = require('mongoose');
 const axios            = require('axios');
 const EmergencyRequest = require('../models/EmergencyRequest');
 const Ambulance        = require('../models/Ambulance');
-const Hospital         = require('../models/Hospital');
 const DispatchLog      = require('../models/DispatchLog');
 const AppError         = require('../utils/AppError');
 const logger           = require('../utils/logger');
 const { haversineDistance } = require('../utils/haversine');
 const redisClient = require('../utils/redisClient');
-const { addDispatchJob, getQueueStats } = require('../utils/dispatchQueue');
 const { allocateQueuedRequest, handleRejection } = require('../utils/dispatchEngine');
 const CircuitBreaker = require('../utils/circuitBreaker');
-const DynamicDispatchScorer = require('../utils/dynamicScorer');
-const RequestStateMachine = require('../utils/requestStateMachine');
 const LoadShedder = require('../utils/loadShedder');
-const eventConsistency = require('../utils/eventConsistency');
-const { AuditLogger } = require('../models/AuditLog');
 const cache = require('../utils/cache');
-const realtimeMonitor = require('../utils/realtimeMonitor');
-const anomalyDetector = require('../utils/anomalyDetector');
-const User = require('../models/User');
 const {
   REQUEST_PRIORITY,
   REQUEST_PRIORITY_VALUES, // FIX: use the array, not the object, for .includes()
@@ -41,8 +32,58 @@ const routeCircuitBreaker = new CircuitBreaker({
   recoveryTimeout: 30000, // 30 seconds
 });
 
-const dynamicScorer = new DynamicDispatchScorer();
 const loadShedder = new LoadShedder();
+let HospitalModel = null;
+let dispatchQueueModule = null;
+let realtimeMonitorModule = null;
+let anomalyDetectorModule = null;
+const shouldUseDispatchQueue =
+  process.env.NODE_ENV !== 'test' || process.env.ENABLE_DISPATCH_QUEUE_IN_TESTS === 'true';
+
+const testQueueFallback = {
+  addDispatchJob: async () => ({ id: 'test-noop-dispatch-job' }),
+  getQueueStats: async () => ({
+    waiting: 0,
+    active: 0,
+    completed: 0,
+    failed: 0,
+    delayed: 0,
+    paused: false,
+    healthy: true,
+  }),
+};
+
+const getDispatchQueueModule = () => {
+  if (!shouldUseDispatchQueue) {
+    return testQueueFallback;
+  }
+
+  if (!dispatchQueueModule) {
+    dispatchQueueModule = require('../utils/dispatchQueue');
+  }
+  return dispatchQueueModule;
+};
+
+const getRealtimeMonitor = () => {
+  if (!realtimeMonitorModule) {
+    realtimeMonitorModule = require('../utils/realtimeMonitor');
+  }
+  return realtimeMonitorModule;
+};
+
+const getAnomalyDetector = () => {
+  if (!anomalyDetectorModule) {
+    anomalyDetectorModule = require('../utils/anomalyDetector');
+  }
+  return anomalyDetectorModule;
+};
+
+const getHospitalModel = () => {
+  if (!HospitalModel) {
+    HospitalModel = require('../models/Hospital');
+  }
+  return HospitalModel;
+};
 
 const transactionUnsupportedError = /Transactions are not supported on the standalone server|transaction numbers are only allowed on a replica set/i;
 let mongoTransactionsSupported = null;
@@ -76,7 +117,10 @@ const startTransactionSession = async () => {
 const commitSession = async (sessionData) => {
   if (!sessionData) return;
   const { session, useTransaction } = sessionData;
-  if (useTransaction && session && session.inTransaction()) {
+  const inTransaction = session && typeof session.inTransaction === 'function'
+    ? session.inTransaction()
+    : true;
+  if (useTransaction && session && inTransaction) {
     await session.commitTransaction();
     session.endSession();
   }
@@ -85,7 +129,10 @@ const commitSession = async (sessionData) => {
 const abortSession = async (sessionData) => {
   if (!sessionData) return;
   const { session, useTransaction } = sessionData;
-  if (useTransaction && session && session.inTransaction()) {
+  const inTransaction = session && typeof session.inTransaction === 'function'
+    ? session.inTransaction()
+    : true;
+  if (useTransaction && session && inTransaction) {
     await session.abortTransaction();
     session.endSession();
   }
@@ -164,6 +211,7 @@ const estimateEta = async (from, to) => {
 
 const findAvailableHospital = async (location, requestType, sessionData) => {
   const { session, useTransaction } = sessionData;
+  const Hospital = getHospitalModel();
   const maxDistance = 50_000;
   const filter = {
     location: {
@@ -217,7 +265,7 @@ const processQueuedAssignment = async (io) => {
     await commitSession(sessionData);
 
     // Update real-time monitoring for ambulance and request
-    await realtimeMonitor.updateAmbulanceStatus(
+    await getRealtimeMonitor().updateAmbulanceStatus(
       result.ambulance._id,
       'ASSIGNED',
       {
@@ -225,7 +273,7 @@ const processQueuedAssignment = async (io) => {
         location: result.ambulance.currentLocation,
       }
     );
-    await realtimeMonitor.updateRequestStatus(
+    await getRealtimeMonitor().updateRequestStatus(
       result.request._id,
       result.request.status,
       'ASSIGNED',
@@ -377,7 +425,7 @@ exports.newRequest = async (req, res, next) => {
     // â”€â”€ Load shedding: reject low-priority during extreme overload â”€â”€
     let metrics = { waiting: 0, allocations: 0, rejections: 0 };
     try {
-      metrics = await getQueueStats();
+      metrics = await getDispatchQueueModule().getQueueStats();
     } catch (metricsErr) {
       logger.warn('Unable to read dispatch queue metrics; skipping load shedding', {
         error: metricsErr.message,
@@ -404,7 +452,7 @@ exports.newRequest = async (req, res, next) => {
       status: { $in: ['PENDING', 'ASSIGNED', 'EN_ROUTE'] },
     });
 
-    if (useTransaction && session) {
+    if (useTransaction && session && existingQuery && typeof existingQuery.session === 'function') {
       existingQuery.session(session);
     }
 
@@ -415,7 +463,7 @@ exports.newRequest = async (req, res, next) => {
     }
 
     // â”€â”€ Anomaly detection â”€â”€
-    const anomalies = await anomalyDetector.detectAnomalies({
+    const anomalies = await getAnomalyDetector().detectAnomalies({
       userId: req.user._id,
       location: { latitude: locLat, longitude: locLng },
       priority,
@@ -497,7 +545,7 @@ exports.newRequest = async (req, res, next) => {
     const priorityMap = { CRITICAL: 3, HIGH: 2, MEDIUM: 1, LOW: 0 };
     const jobPriority = priorityMap[request.priority] || 1;
     try {
-      await addDispatchJob(request._id.toString(), 'allocate', null, jobPriority);
+      await getDispatchQueueModule().addDispatchJob(request._id.toString(), 'allocate', null, jobPriority);
     } catch (queueErr) {
       logger.error('Failed to enqueue dispatch job after request commit', {
         requestId: request._id.toString(),
@@ -509,7 +557,7 @@ exports.newRequest = async (req, res, next) => {
     await cache.invalidateEmergencyData();
 
     // Update real-time monitoring metrics
-    await realtimeMonitor.updateRequestStatus(
+    await getRealtimeMonitor().updateRequestStatus(
       request._id,
       request.status,
       'PENDING',
@@ -1006,4 +1054,3 @@ exports.cancelRequest = async (req, res, next) => {
     if (sessionData?.session) sessionData.session.endSession();
   }
 };
-

@@ -15,17 +15,24 @@
 
 const mongoose  = require('mongoose');
 const request   = require('supertest');
+jest.setTimeout(30000);
 
 // ── Bootstrap in-memory MongoDB before anything imports Mongoose ──────────────
 let mongoServer;
+let app;
 
 beforeAll(async () => {
-  const { MongoMemoryServer } = require('mongodb-memory-server');
-  mongoServer = await MongoMemoryServer.create();
-  await mongoose.connect(mongoServer.getUri());
+  process.env.NODE_ENV   = 'test';
   process.env.JWT_SECRET = 'integration-test-secret';
   process.env.JWT_EXPIRE = '1h';
-  process.env.NODE_ENV   = 'test';
+  process.env.SESSION_SECRET = 'integration-session-secret';
+
+  const { MongoMemoryServer } = require('mongodb-memory-server');
+  mongoServer = await MongoMemoryServer.create();
+  process.env.MONGODB_URI = mongoServer.getUri();
+  await mongoose.connect(process.env.MONGODB_URI);
+  delete require.cache[require.resolve('../index')];
+  app = require('../index').app;
 });
 
 afterAll(async () => {
@@ -44,9 +51,7 @@ afterEach(async () => {
 // ── Import app AFTER env is set ───────────────────────────────────────────────
 // We import lazily to ensure env vars are set first.
 const getApp = () => {
-  // Clear module cache so each test file gets a fresh app instance if needed
-  delete require.cache[require.resolve('../index')];
-  return require('../index').app;
+  return app;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -54,9 +59,10 @@ const getApp = () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const registerUser = async (app, overrides = {}) => {
+  const unique = `${Date.now()}${Math.floor(Math.random() * 100000)}`;
   const defaults = {
     name:     'Test User',
-    email:    `test${Date.now()}@example.com`,
+    email:    `test${unique}@example.com`,
     phone:    `+1${Math.floor(1000000000 + Math.random() * 9000000000)}`,
     password: 'Secure@Pass1',
     role:     'CITIZEN',
@@ -93,7 +99,7 @@ describe('GET /health', () => {
 
 describe('POST /api/auth/register', () => {
   let app;
-  beforeAll(() => { app = getApp(); });
+  beforeEach(() => { app = getApp(); });
 
   it('201 — registers a new citizen user', async () => {
     const res = await request(app).post('/api/auth/register').send({
@@ -147,7 +153,7 @@ describe('POST /api/auth/register', () => {
 
 describe('POST /api/auth/login', () => {
   let app;
-  beforeAll(() => { app = getApp(); });
+  beforeEach(() => { app = getApp(); });
 
   it('200 — logs in with correct credentials', async () => {
     await request(app).post('/api/auth/register').send({
@@ -183,7 +189,7 @@ describe('POST /api/auth/login', () => {
 
 describe('GET /api/auth/me', () => {
   let app;
-  beforeAll(() => { app = getApp(); });
+  beforeEach(() => { app = getApp(); });
 
   it('200 — returns current user for valid token', async () => {
     const { token } = await registerUser(app);
@@ -213,7 +219,7 @@ describe('GET /api/auth/me', () => {
 describe('POST /api/ambulances', () => {
   let app, driverToken;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     app = getApp();
     // We need to manually set role to DRIVER since register sanitises to CITIZEN
     const { token } = await registerUser(app, { role: 'DRIVER' });
@@ -259,7 +265,7 @@ describe('POST /api/ambulances', () => {
 describe('POST /api/dispatch/request', () => {
   let app, citizenToken;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     app = getApp();
     const { token } = await registerUser(app, { role: 'CITIZEN' });
     citizenToken = token;
@@ -330,7 +336,7 @@ describe('POST /api/dispatch/request', () => {
 describe('GET /api/dispatch/active', () => {
   let app, citizenToken;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     app = getApp();
     const { token } = await registerUser(app);
     citizenToken = token;
@@ -366,7 +372,7 @@ describe('GET /api/dispatch/active', () => {
 describe('GET /api/emergency/history', () => {
   let app, citizenToken;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     app = getApp();
     const { token } = await registerUser(app);
     citizenToken = token;
@@ -423,7 +429,7 @@ describe('GET /api/emergency/history', () => {
 describe('Admin routes', () => {
   let app, adminToken, citizenToken;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     app = getApp();
     const User = require('../models/User');
     const jwt  = require('jsonwebtoken');
@@ -493,7 +499,7 @@ describe('Admin routes', () => {
 describe('Role enforcement', () => {
   let app, citizenToken, driverToken;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     app = getApp();
     const User = require('../models/User');
     const jwt  = require('jsonwebtoken');
@@ -536,7 +542,7 @@ describe('Role enforcement', () => {
 
 describe('Error handling', () => {
   let app;
-  beforeAll(() => { app = getApp(); });
+  beforeEach(() => { app = getApp(); });
 
   it('404 — unknown route returns proper error shape', async () => {
     const res = await request(app).get('/api/does-not-exist');
@@ -563,7 +569,7 @@ describe('Error handling', () => {
 describe('DELETE /api/dispatch/:id — cancel request', () => {
   let app, citizenToken, citizenId;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     app = getApp();
     const { token } = await registerUser(app, { email: 'cancel@test.com', phone: '+16665550001' });
     citizenToken    = token;
@@ -606,3 +612,4 @@ describe('DELETE /api/dispatch/:id — cancel request', () => {
     expect(res.status).toBe(403);
   });
 });
+

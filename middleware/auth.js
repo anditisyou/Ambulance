@@ -3,8 +3,11 @@
 const jwt       = require('jsonwebtoken');
 const User      = require('../models/User');
 const AppError  = require('../utils/AppError');
-const redisClient = require('../utils/redisClient');
-const { isRedisAvailable } = require('../utils/redisClient');
+const redisModule = require('../utils/redisClient');
+const redisClient = redisModule && typeof redisModule === 'object' ? redisModule : null;
+const isRedisAvailable = redisModule && typeof redisModule.isRedisAvailable === 'function'
+  ? redisModule.isRedisAvailable
+  : () => false;
 
 /**
  * In-memory fallback token blacklist (used when Redis is unavailable).

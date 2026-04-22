@@ -11,7 +11,23 @@ const { AuditLogger } = require('../models/AuditLog');
 const realtimeMonitor = require('../utils/realtimeMonitor');
 const logger = require('../utils/logger');
 const { AMBULANCE_STATUS, REQUEST_STATUS, ROLES } = require('../utils/constants');
-const { addDispatchJob } = require('../utils/dispatchQueue');
+let dispatchQueueModule = null;
+const shouldUseDispatchQueue =
+  process.env.NODE_ENV !== 'test' || process.env.ENABLE_DISPATCH_QUEUE_IN_TESTS === 'true';
+
+const getDispatchQueueModule = () => {
+  if (!shouldUseDispatchQueue) {
+    return {
+      addDispatchJob: async () => ({ id: 'test-noop-dispatch-job' }),
+    };
+  }
+
+  if (!dispatchQueueModule) {
+    dispatchQueueModule = require('../utils/dispatchQueue');
+  }
+
+  return dispatchQueueModule;
+};
 
 /**
  * Driver accepts assignment
@@ -201,7 +217,7 @@ exports.rejectAssignment = async (req, res, next) => {
     // Queue retry job (AFTER commit)
     const priorityMap = { CRITICAL: 3, HIGH: 2, MEDIUM: 1, LOW: 0 };
     const jobPriority = priorityMap[request.priority] || 1;
-    await addDispatchJob(requestId, 'retry', driver._id.toString(), jobPriority);
+    await getDispatchQueueModule().addDispatchJob(requestId, 'retry', driver._id.toString(), jobPriority);
 
     // Update real-time monitoring metrics (AFTER commit)
     await realtimeMonitor.updateRequestStatus(

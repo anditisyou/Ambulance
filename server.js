@@ -27,6 +27,7 @@ const swaggerSpec = require('./config/swagger');
 const { getPrometheusMetrics, getMetrics } = require('./utils/metrics');
 const errorHandler = require('./middleware/errorHandler');
 const logger = require('./utils/logger');
+const isTestEnv = process.env.NODE_ENV === 'test';
 
 let isTokenRevoked = async () => false;
 try {
@@ -95,21 +96,31 @@ const constantsRoutes = require('./routes/constants');
 const syncRoutes = require('./routes/syncRoutes');
 
 // Import production safety utilities
-const dataRetentionManager = require('./utils/dataRetentionManager');
-const offlineDriverManager = require('./utils/offlineDriverManager');
+const dataRetentionManager = !isTestEnv ? require('./utils/dataRetentionManager') : null;
+const offlineDriverManager = !isTestEnv ? require('./utils/offlineDriverManager') : null;
 const locationSmoother = require('./utils/locationSmoother');
 const anomalyDetector = require('./utils/anomalyDetector');
 const redisClient = require('./utils/redisClient');
 const memoryMonitor = require('./utils/memoryMonitor');
-const {
-  dispatchWorker,
-  queueEvents,
-  dispatchQueueScheduler,
-  dlqScheduler,
-  startReconciliationLoop,
-  stopReconciliationLoop,
-  recoverDispatchState,
-} = require('./utils/dispatchQueue');
+let dispatchWorker = null;
+let queueEvents = null;
+let dispatchQueueScheduler = null;
+let dlqScheduler = null;
+let startReconciliationLoop = () => {};
+let stopReconciliationLoop = async () => {};
+let recoverDispatchState = async () => {};
+
+if (!isTestEnv) {
+  ({
+    dispatchWorker,
+    queueEvents,
+    dispatchQueueScheduler,
+    dlqScheduler,
+    startReconciliationLoop,
+    stopReconciliationLoop,
+    recoverDispatchState,
+  } = require('./utils/dispatchQueue'));
+}
 
 const expressApp = express();
 const server = http.createServer(expressApp);
@@ -125,6 +136,35 @@ const normalizeOrigin = (url) => {
   } catch (_) {
     return url.replace(/\/+$/, '');
   }
+};
+
+// In production, Redis is required. Wait briefly for readiness and fail fast if unavailable.
+const waitForRedisReady = async (timeoutMs = 10000, intervalMs = 200) => {
+  if (process.env.NODE_ENV !== 'production') return true;
+
+  const hasRedisConfig = process.env.REDIS_URL || process.env.REDIS_HOST || process.env.REDIS_PORT;
+  if (!hasRedisConfig) {
+    logger.error('FATAL: Redis is not configured but is required in production');
+    process.exit(1);
+  }
+
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      if (redisClient && typeof redisClient.isRedisAvailable === 'function') {
+        if (redisClient.isRedisAvailable()) return true;
+      } else if (redisClient && typeof redisClient.ping === 'function') {
+        await redisClient.ping();
+        return true;
+      }
+    } catch (err) {
+      // ignore and retry
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+
+  logger.error('FATAL: Redis did not become available within startup timeout');
+  process.exit(1);
 };
 
 const frontendOrigin = normalizeOrigin(FRONTEND_URL);
@@ -169,7 +209,7 @@ const io = new Server(server, {
   allowEIO3: true,
 });
 
-if (process.env.REDIS_URL || process.env.REDIS_HOST || process.env.REDIS_PORT) {
+if (!isTestEnv && (process.env.REDIS_URL || process.env.REDIS_HOST || process.env.REDIS_PORT)) {
   const adapterOptions = {
     connectTimeout: 10000,
     enableOfflineQueue: true, // Enable offline queue to prevent "Stream isn't writeable" errors
@@ -227,20 +267,20 @@ expressApp.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc:  ["'self'", "'unsafe-inline'",
+      scriptSrc:  ["'self'",
                    "https://code.jquery.com",
                    "https://cdn.jsdelivr.net",
                    "https://cdn.tailwindcss.com",
                    "https://stackpath.bootstrapcdn.com",
                    "https://cdn.socket.io"],
-      scriptSrcAttr: ["'unsafe-inline'"],
-      styleSrc:   ["'self'", "'unsafe-inline'",
+      scriptSrcAttr: [],
+      styleSrc:   ["'self'",
                    "https://cdn.jsdelivr.net",
                    "https://cdn.tailwindcss.com",
                    "https://stackpath.bootstrapcdn.com",
                    "https://cdnjs.cloudflare.com",
                    "https://fonts.googleapis.com"],
-      styleSrcAttr: ["'unsafe-inline'"],
+      styleSrcAttr: [],
       fontSrc:    ["'self'", "https:", "data:",
                    "https://fonts.gstatic.com",
                    "https://cdnjs.cloudflare.com"],
@@ -296,7 +336,9 @@ expressApp.use(express.static(path.join(__dirname, 'public'), {
 const rateLimiter = require('./utils/rateLimiter');
 
 // Apply advanced rate limiting to all API routes
-expressApp.use('/api', rateLimiter.middleware());
+if (!isTestEnv) {
+  expressApp.use('/api', rateLimiter.middleware());
+}
 
 // Database connection with retry logic
 let dispatchRecoveryInitialized = false;
@@ -327,6 +369,14 @@ const initializeDispatchRecovery = async () => {
 };
 
 const connectWithRetry = async () => {
+  if (mongoose.connection.readyState === 1) {
+    if (!mongoReadyResolved) {
+      mongoReadyResolved = true;
+      resolveMongoReady();
+    }
+    return;
+  }
+
   try {
     await mongoose.connect(process.env.MONGODB_URI, {
       serverSelectionTimeoutMS: 5000,
@@ -346,8 +396,10 @@ const connectWithRetry = async () => {
     }
   } catch (err) {
     logger.error('MongoDB connection error:', err);
-    logger.info('Retrying connection in 5 seconds...');
-    setTimeout(connectWithRetry, 5000);
+    if (!isTestEnv) {
+      logger.info('Retrying connection in 5 seconds...');
+      setTimeout(connectWithRetry, 5000);
+    }
   }
 };
 
@@ -397,6 +449,18 @@ expressApp.get('/metrics-dashboard', (req, res) => {
 });
 
 // Swagger docs
+// In production, require a bearer token to view API docs (set `SWAGGER_ACCESS_TOKEN`).
+if (process.env.NODE_ENV === 'production') {
+  expressApp.use('/api-docs', (req, res, next) => {
+    const auth = req.headers.authorization || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    if (!process.env.SWAGGER_ACCESS_TOKEN || token !== process.env.SWAGGER_ACCESS_TOKEN) {
+      return res.status(403).send('Forbidden');
+    }
+    next();
+  });
+}
+
 expressApp.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   explorer: true,
   customCss: '.swagger-ui .topbar { display: none }',
@@ -410,6 +474,14 @@ expressApp.get('/api-docs.json', (req, res) => {
 
 // Health check endpoint with detailed system status
 expressApp.get('/health', async (req, res) => {
+  // Restrict health in production to internal callers or a shared secret header
+  if (process.env.NODE_ENV === 'production') {
+    const ip = (req.ip || '').replace('::ffff:', '');
+    const internalIp = ip === '127.0.0.1' || ip === '::1' || ip.startsWith('10.') || ip.startsWith('192.168.') || ip.startsWith('172.');
+    if (!internalIp && req.get('X-Internal-Health') !== process.env.HEALTH_CHECK_TOKEN) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+  }
   const health = {
     // Keep stable "ok" for orchestrator checks while exposing detailed state separately.
     status: 'ok',
@@ -477,6 +549,14 @@ expressApp.get('/health', async (req, res) => {
 
 // Readiness probe: strict dependency check for orchestrators.
 expressApp.get('/ready', async (req, res) => {
+  // Restrict readiness in production to internal callers or a shared secret header
+  if (process.env.NODE_ENV === 'production') {
+    const ip = (req.ip || '').replace('::ffff:', '');
+    const internalIp = ip === '127.0.0.1' || ip === '::1' || ip.startsWith('10.') || ip.startsWith('192.168.') || ip.startsWith('172.');
+    if (!internalIp && req.get('X-Internal-Health') !== process.env.HEALTH_CHECK_TOKEN) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+  }
   const readiness = {
     status: 'ready',
     timestamp: new Date().toISOString(),
@@ -651,7 +731,9 @@ io.engine.on('connection_error', (err) => {
 
 // Redis subscriber for cross-process socket events.
 let subscriber = null;
-subscriber = new Redis(redisConnection);
+if (!isTestEnv) {
+  subscriber = new Redis(redisConnection);
+}
 
 const initializeSocketSubscriber = () => {
   subscriber.subscribe('socket-events', (err) => {
@@ -684,12 +766,13 @@ const initializeSocketSubscriber = () => {
   });
 };
 
-subscriber.on('connect', () => logger.info('[Socket subscriber] connected'));
-subscriber.on('ready', () => logger.info('[Socket subscriber] ready'));
-subscriber.on('error', (err) => logger.error('[Socket subscriber] error', err));
-subscriber.on('close', () => logger.warn('[Socket subscriber] closed'));
-
-initializeSocketSubscriber();
+if (subscriber) {
+  subscriber.on('connect', () => logger.info('[Socket subscriber] connected'));
+  subscriber.on('ready', () => logger.info('[Socket subscriber] ready'));
+  subscriber.on('error', (err) => logger.error('[Socket subscriber] error', err));
+  subscriber.on('close', () => logger.warn('[Socket subscriber] closed'));
+  initializeSocketSubscriber();
+}
 
 // Graceful shutdown
 const gracefulShutdown = async (signal) => {
@@ -800,6 +883,8 @@ process.on('unhandledRejection', (reason) => {
 if (require.main === module) {
   const startApp = async () => {
     await waitForMongoConnection;
+    // Ensure Redis is available in production before accepting traffic
+    await waitForRedisReady();
     const PORT = process.env.PORT || 3000;
     const httpServer = server.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);
