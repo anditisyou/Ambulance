@@ -1,0 +1,103 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:6
+    container_name: ers-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ers
+    volumes:
+      - mongodb_data:/data/db
+    ports:
+      - "27017:27017"
+    networks:
+      - ers-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: ers-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - ers-network
+
+  osrm:
+    image: osrm/osrm-backend:latest
+    container_name: ers-osrm
+    restart: unless-stopped
+    profiles:
+      - osrm
+    command: osrm-routed --algorithm mld /data/region.osrm
+    volumes:
+      - ./osrm-data:/data
+    ports:
+      - "5000:5000"
+    networks:
+      - ers-network
+
+  app:
+    build:
+      context: .
+      dockerfile: dockerfile
+    container_name: ers-app
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      MONGODB_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongodb:27017/ers?authSource=admin
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      SESSION_SECRET: ${SESSION_SECRET}
+      JWT_EXPIRE: 7d
+      FRONTEND_URL: ${FRONTEND_URL}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER}
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
+      EMAIL_FROM: ${EMAIL_FROM}
+      OSRM_ROUTING_URL: ${OSRM_ROUTING_URL}
+    depends_on:
+      - mongodb
+      - redis
+    ports:
+      - "3000:3000"
+    networks:
+      - ers-network
+    volumes:
+      - uploads:/app/uploads
+
+  nginx:
+    image: nginx:alpine
+    container_name: ers-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app
+    networks:
+      - ers-network
+
+volumes:
+  mongodb_data:
+  redis_data:
+  uploads:
+
+networks:
+  ers-network:
+    driver: bridge

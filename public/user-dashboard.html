@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Dashboard - Emergency Response System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --primary-light: #60a5fa;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --dark: #1e293b;
+            --light: #f8fafc;
+            --gray: #64748b;
+            --gradient-primary: linear-gradient(135deg, #2563eb, #1d4ed8);
+            --gradient-success: linear-gradient(135deg, #10b981, #059669);
+            --gradient-danger: linear-gradient(135deg, #ef4444, #dc2626);
+            --gradient-warning: linear-gradient(135deg, #f59e0b, #d97706);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f1f5f9;
+            min-height: 100vh;
+        }
+
+        .navbar-modern {
+            background: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .navbar-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .navbar-brand {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--danger);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .navbar-brand i {
+            font-size: 2rem;
+        }
+
+        .navbar-menu {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.5rem 1rem;
+            background: #f8fafc;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .user-profile:hover {
+            background: #f1f5f9;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background: var(--gradient-primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 1.2rem;
+        }
+
+        .user-info {
+            line-height: 1.4;
+        }
+
+        .user-info .name {
+            font-weight: 600;
+            color: var(--dark);
+            font-size: 0.95rem;
+        }
+
+        .user-info .role {
+            font-size: 0.8rem;
+            color: var(--gray);
+        }
+
+        .logout-btn {
+            padding: 0.5rem 1.2rem;
+            background: #fee2e2;
+            color: var(--danger);
+            border: none;
+            border-radius: 50px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .logout-btn:hover {
+            background: var(--danger);
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        .dashboard-container {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .welcome-banner {
+            background: white;
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+        }
+
+        .welcome-text h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--dark);
+            margin-bottom: 0.5rem;
+        }
+
+        .welcome-text p {
+            color: var(--gray);
+            font-size: 1rem;
+        }
+
+        .emergency-status {
+            background: #fee2e2;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            color: var(--danger);
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .emergency-status:hover {
+            transform: scale(1.05);
+            background: #fecaca;
+        }
+
+        .emergency-status i {
+            font-size: 1.2rem;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        
+        .action-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .action-card {
+            background: white;
+            border-radius: 20px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+
+        .action-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(0,0,0,0.1);
+        }
+
+        .action-card.sos {
+            background: var(--gradient-danger);
+            color: white;
+        }
+
+        .action-card.sos .action-icon {
+            background: rgba(255,255,255,0.2);
+            color: white;
+        }
+
+        .action-icon {
+            width: 80px;
+            height: 80px;
+            background: #f1f5f9;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            margin: 0 auto 1.5rem;
+            color: var(--primary);
+            transition: all 0.3s ease;
+        }
+
+        .action-card:hover .action-icon {
+            transform: scale(1.1);
+        }
+
+        .action-card h3 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .action-card p {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin: 0;
+        }
+
+        .active-emergency {
+            background: linear-gradient(135deg, #fee2e2, #fecaca);
+            border-radius: 16px;
+            padding: 1.5rem 2rem;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-left: 4px solid var(--danger);
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .emergency-info {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .emergency-icon {
+            width: 50px;
+            height: 50px;
+            background: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--danger);
+            font-size: 1.5rem;
+        }
+
+        .emergency-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.5rem;
+        }
+
+        .emergency-badge {
+            background: rgba(255, 255, 255, 0.9);
+            color: var(--danger);
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+        }
+
+        .emergency-details h4 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #991b1b;
+            margin-bottom: 0.3rem;
+        }
+
+        .emergency-details p {
+            color: #7f1d1d;
+            font-size: 0.95rem;
+            margin: 0;
+        }
+
+        .emergency-badge {
+            background: white;
+            padding: 0.5rem 1.5rem;
+            border-radius: 50px;
+            font-weight: 600;
+            color: var(--danger);
+        }
+
+        .records-section {
+            background: white;
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .section-header h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--dark);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .upload-btn {
+            padding: 0.8rem 1.5rem;
+            background: var(--gradient-primary);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .upload-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2);
+        }
+
+        .records-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .record-card {
+            background: #f8fafc;
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+
+        .record-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            background: white;
+        }
+
+        .record-icon {
+            width: 50px;
+            height: 50px;
+            background: white;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            color: var(--primary);
+        }
+
+        .record-info {
+            flex: 1;
+        }
+
+        .record-info h4 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--dark);
+            margin-bottom: 0.3rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .record-info p {
+            font-size: 0.8rem;
+            color: var(--gray);
+            margin: 0;
+        }
+
+        .record-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .record-btn {
+            width: 35px;
+            height: 35px;
+            border: none;
+            border-radius: 8px;
+            background: white;
+            color: var(--gray);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .record-btn:hover {
+            background: var(--primary);
+            color: white;
+        }
+
+        .empty-records {
+            text-align: center;
+            padding: 3rem;
+            color: var(--gray);
+            background: #f8fafc;
+            border-radius: 16px;
+        }
+
+        .empty-records i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .modal-content {
+            border: none;
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        .modal-header {
+            background: var(--gradient-primary);
+            color: white;
+            border: none;
+            padding: 1.5rem 2rem;
+        }
+
+        .modal-header .btn-close {
+            filter: brightness(0) invert(1);
+        }
+
+        .modal-body {
+            padding: 2rem;
+        }
+
+        .upload-area {
+            border: 2px dashed #e2e8f0;
+            border-radius: 16px;
+            padding: 2.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .upload-area:hover {
+            border-color: var(--primary);
+            background: #f8fafc;
+            transform: translateY(-2px);
+        }
+
+        .upload-area.border-primary {
+            border-color: var(--primary);
+            background: #f8fafc;
+        }
+
+        .upload-area i {
+            font-size: 3rem;
+            color: var(--gray);
+            margin-bottom: 1rem;
+        }
+
+        .upload-area p {
+            color: var(--gray);
+            margin-bottom: 0.5rem;
+        }
+
+        .upload-area .small {
+            font-size: 0.8rem;
+            color: var(--gray);
+        }
+
+        #selectedFilePreview .card {
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .file-icon i {
+            transition: transform 0.3s ease;
+        }
+
+        .file-info h6 {
+            max-width: 250px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .progress {
+            height: 8px;
+            border-radius: 4px;
+            background: #e2e8f0;
+        }
+
+        .progress-bar {
+            background: var(--gradient-primary);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        .progress-bar-striped {
+            background-image: linear-gradient(45deg, rgba(255,255,255,.15) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.15) 50%, rgba(255,255,255,.15) 75%, transparent 75%, transparent);
+            background-size: 1rem 1rem;
+        }
+
+        #uploadSubmitBtn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-outline-danger:hover {
+            background-color: #ef4444;
+            color: white;
+        }
+
+        @media (max-width: 768px) {
+            .navbar-container {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            
+            .navbar-menu {
+                width: 100%;
+                justify-content: space-between;
+            }
+            
+            .welcome-banner {
+                flex-direction: column;
+                text-align: center;
+                gap: 1rem;
+            }
+            
+            .active-emergency {
+                flex-direction: column;
+                text-align: center;
+                gap: 1rem;
+            }
+            
+            .emergency-info {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .action-cards {
+                grid-template-columns: 1fr;
+            }
+            
+            .records-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .section-header {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .file-info h6 {
+                max-width: 150px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar-modern">
+        <div class="navbar-container">
+            <a href="/" class="navbar-brand">
+                <i class="fas fa-ambulance"></i>
+                <span>ERS</span>
+            </a>
+            
+            <div class="navbar-menu">
+                <div class="user-profile" onclick="toggleProfileMenu()">
+                    <div class="user-avatar" id="userInitials">U</div>
+                    <div class="user-info">
+                        <div class="name" id="userName">Loading...</div>
+                        <div class="role">Citizen</div>
+                    </div>
+                    <i class="fas fa-chevron-down" style="color: var(--gray); font-size: 0.8rem;"></i>
+                </div>
+                <button class="logout-btn" onclick="logout()">
+                    <i class="fas fa-sign-out-alt me-2"></i>Logout
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <div class="welcome-banner">
+            <div class="welcome-text">
+                <h1>Welcome back, <span id="userFullName">User</span>!</h1>
+                <p>Your health and safety are our top priority</p>
+            </div>
+            <div class="emergency-status" id="quickEmergency" onclick="showSOSModal()">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>Emergency SOS</span>
+            </div>
+        </div>
+
+        <div id="activeEmergency" class="active-emergency" style="display: none;">
+            <div class="emergency-info">
+                <div class="emergency-icon">
+                    <i class="fas fa-ambulance"></i>
+                </div>
+                <div class="emergency-details">
+                    <h4>Active Emergency Request</h4>
+                    <p id="emergencyStatus">Status: PENDING</p>
+                </div>
+            </div>
+            <div class="emergency-actions">
+                <div class="emergency-badge">
+                    <i class="fas fa-clock me-2"></i>Awaiting Response
+                </div>
+                <button id="cancelEmergencyBtn" class="btn btn-outline-danger btn-sm ms-3" onclick="cancelEmergency()" style="display: none;">
+                    <i class="fas fa-times me-1"></i>Cancel Request
+                </button>
+            </div>
+        </div>
+
+        <div class="action-cards">
+            <div class="action-card" onclick="showUploadModal()">
+                <div class="action-icon">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                </div>
+                <h3>Upload Medical Record</h3>
+                <p>Keep your medical history accessible for emergencies</p>
+            </div>
+
+            <div class="action-card sos" onclick="showSOSModal()">
+                <div class="action-icon">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <h3>Emergency SOS</h3>
+                <p>Immediate assistance at your location</p>
+            </div>
+
+            <div class="action-card" onclick="viewEmergencyHistory()">
+                <div class="action-icon">
+                    <i class="fas fa-history"></i>
+                </div>
+                <h3>Emergency History</h3>
+                <p>View your past emergency requests</p>
+            </div>
+        </div>
+
+        <section class="records-section">
+            <div class="section-header">
+                <h2>
+                    <i class="fas fa-notes-medical" style="color: var(--primary);"></i>
+                    Your Medical Records
+                </h2>
+                <button class="upload-btn" onclick="showUploadModal()">
+                    <i class="fas fa-plus-circle"></i>
+                    Upload New Record
+                </button>
+            </div>
+
+            <div id="medicalRecords" class="records-grid">
+                <div class="empty-records">
+                    <i class="fas fa-folder-open"></i>
+                    <p>No medical records found. Upload your first record to get started.</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Enhanced Upload Modal -->
+    <div class="modal fade" id="uploadModal" tabindex="-1" aria-hidden="true" inert>
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-cloud-upload-alt me-2"></i>Upload Medical Record
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="uploadForm">
+                        <div class="upload-area" id="uploadArea">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p class="mb-2">Click to select or drag and drop</p>
+                            <p class="small text-muted">Supported formats: PDF, JPG, PNG (Max 10MB)</p>
+                            <input type="file" id="medicalFile" style="display: none;" accept=".pdf,.jpg,.jpeg,.png">
+                        </div>
+                        
+                        <div id="selectedFilePreview" style="display: none;" class="mt-3">
+                            <div class="card border-0 bg-light">
+                                <div class="card-body p-3">
+                                    <div class="d-flex align-items-center justify-content-between">
+                                        <div class="d-flex align-items-center gap-3">
+                                            <div class="file-icon">
+                                                <i class="fas fa-file-pdf fa-2x text-danger"></i>
+                                            </div>
+                                            <div class="file-info">
+                                                <h6 class="mb-1 file-name" id="selectedFileName">No file selected</h6>
+                                                <small class="text-muted file-size" id="selectedFileSize">0 KB</small>
+                                            </div>
+                                        </div>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearSelectedFile()">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                    <div class="file-validation mt-2" id="fileValidation" style="display: none;">
+                                        <small class="text-danger">
+                                            <i class="fas fa-exclamation-triangle"></i>
+                                            <span id="validationMessage"></span>
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="uploadProgress" class="mt-3" style="display: none;">
+                            <div class="d-flex justify-content-between mb-1">
+                                <small>Uploading...</small>
+                                <small class="progress-percentage">0%</small>
+                            </div>
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                            </div>
+                            <small class="text-muted" id="uploadStatus">Preparing file...</small>
+                        </div>
+                        
+                        <div class="mt-4">
+                            <button type="submit" class="btn btn-primary w-100 py-3" id="uploadSubmitBtn" disabled>
+                                <i class="fas fa-upload me-2"></i>Upload Record
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="historyModal" tabindex="-1" aria-hidden="true" inert>
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-history me-2"></i>Emergency History
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="emergencyHistory"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="sosModal" tabindex="-1" aria-hidden="true" inert>
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Emergency Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="sosForm" onsubmit="triggerSOS(); return false;">
+                        <div class="mb-3">
+                            <label for="sosDescription" class="form-label">What is happening?</label>
+                            <textarea id="sosDescription" class="form-control" rows="3" placeholder="Describe your condition or emergency."></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="sosAllergies" class="form-label">Allergies</label>
+                            <input id="sosAllergies" type="text" class="form-control" placeholder="e.g. penicillin, nuts">
+                        </div>
+                        <div class="mb-3">
+                            <label for="sosTriageNotes" class="form-label">Triage notes</label>
+                            <textarea id="sosTriageNotes" class="form-control" rows="2" placeholder="Any relevant symptoms or notes."></textarea>
+                        </div>
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <label for="sosHeartRate" class="form-label">Heart rate</label>
+                                <input id="sosHeartRate" type="number" class="form-control" placeholder="bpm">
+                            </div>
+                            <div class="col-6 mb-3">
+                                <label for="sosBloodPressure" class="form-label">Blood pressure</label>
+                                <input id="sosBloodPressure" type="text" class="form-control" placeholder="e.g. 120/80">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <label for="sosRespiratoryRate" class="form-label">Respiratory rate</label>
+                                <input id="sosRespiratoryRate" type="number" class="form-control" placeholder="breaths/min">
+                            </div>
+                            <div class="col-6 mb-3">
+                                <label for="sosOxygenSaturation" class="form-label">Oxygen saturation</label>
+                                <input id="sosOxygenSaturation" type="number" class="form-control" placeholder="%">
+                            </div>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-danger">Send Emergency SOS</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/apiClient.js"></script>
+    <script src="/js/auth.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/user-dashboard.js"></script>
+</body>
+</html>

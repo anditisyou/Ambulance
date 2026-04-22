@@ -1,0 +1,49 @@
+services:
+  - type: web
+    name: ers-backend
+    env: docker
+    branch: main
+    dockerfilePath: ./dockerfile
+    plan: starter
+    autoDeploy: true
+    buildCommand: npm ci
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: '3000'
+      - key: FRONTEND_URL
+        value: 'https://your-frontend-url.onrender.com'
+      - key: MONGODB_URI
+        fromSecret: MONGODB_URI
+      - key: JWT_SECRET
+        fromSecret: JWT_SECRET
+      - key: SESSION_SECRET
+        fromSecret: SESSION_SECRET
+      - key: REDIS_URL
+        fromSecret: REDIS_URL
+      - key: CLOUDINARY_CLOUD_NAME
+        fromSecret: CLOUDINARY_CLOUD_NAME
+      - key: CLOUDINARY_API_KEY
+        fromSecret: CLOUDINARY_API_KEY
+      - key: CLOUDINARY_API_SECRET
+        fromSecret: CLOUDINARY_API_SECRET
+      - key: TWILIO_ACCOUNT_SID
+        fromSecret: TWILIO_ACCOUNT_SID
+      - key: TWILIO_AUTH_TOKEN
+        fromSecret: TWILIO_AUTH_TOKEN
+      - key: TWILIO_PHONE_NUMBER
+        fromSecret: TWILIO_PHONE_NUMBER
+      - key: EMAIL_HOST
+        fromSecret: EMAIL_HOST
+      - key: EMAIL_PORT
+        fromSecret: EMAIL_PORT
+      - key: EMAIL_USER
+        fromSecret: EMAIL_USER
+      - key: EMAIL_PASS
+        fromSecret: EMAIL_PASS
+      - key: EMAIL_FROM
+        fromSecret: EMAIL_FROM
+      - key: OSRM_ROUTING_URL
+        fromSecret: OSRM_ROUTING_URL
