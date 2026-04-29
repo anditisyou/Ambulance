@@ -40,10 +40,13 @@ exports.getEmergencyRequests = async (req, res, next) => {
 
     switch (req.user.role) {
       case ROLES.HOSPITAL:
+        // Hospitals should see new PENDING requests, requests assigned to them,
+        // and also requests that are ASSIGNED to an ambulance but have no hospital selected yet.
         query = {
           $or: [
             { status: REQUEST_STATUS.PENDING },
             { assignedHospital: req.user._id },
+            { status: REQUEST_STATUS.ASSIGNED, assignedHospital: { $exists: false } },
           ],
         };
         break;

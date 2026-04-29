@@ -74,8 +74,19 @@ if (process.env.NODE_ENV === 'production') {
 }
 const missingEnvVars = requiredEnvVars.filter((v) => !process.env[v]);
 if (missingEnvVars.length > 0) {
-  logger.error(`FATAL: Missing environment variables: ${missingEnvVars.join(', ')}`);
-  process.exit(1);
+  if (process.env.NODE_ENV === 'production') {
+    logger.error(`FATAL: Missing environment variables: ${missingEnvVars.join(', ')}`);
+    process.exit(1);
+  }
+  // In non-production, don't fail hard — warn and provide safe fallbacks where possible.
+  logger.warn(`Non-production environment missing variables: ${missingEnvVars.join(', ')} — using development fallbacks`);
+  if (!process.env.JWT_SECRET) {
+    // Provide ephemeral JWT_SECRET for local development/testing
+    // eslint-disable-next-line global-require
+    const crypto = require('crypto');
+    process.env.JWT_SECRET = crypto.randomBytes(32).toString('hex');
+    logger.warn('Generated ephemeral JWT_SECRET for development');
+  }
 }
 
 // Import routes
@@ -590,7 +601,11 @@ io.on('connection', (socket) => {
   if (user.role === ROLES.DRIVER) socket.join(`driver_${user.id}`);
   if (user.role === ROLES.ADMIN) socket.join('admins');
   if (user.role === ROLES.DISPATCHER) socket.join('dispatchers');
-  if (user.role === ROLES.HOSPITAL) socket.join(`hospital_${user.id}`);
+  if (user.role === ROLES.HOSPITAL) {
+    socket.join(`hospital_${user.id}`);
+    // Join a shared hospitals room so broadcasts for new requests reach all hospitals
+    socket.join('hospitals');
+  }
 
   socket.on('join', async (data) => {
     if (!data?.requestId) return;

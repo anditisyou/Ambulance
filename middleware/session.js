@@ -17,17 +17,28 @@ if (!sessionSecret) {
   console.warn('[Session] SESSION_SECRET missing in non-production; using ephemeral in-memory fallback.');
 }
 
+let store;
+if (process.env.MONGODB_URI) {
+  store = MongoStore.create({
+    mongoUrl: process.env.MONGODB_URI,
+    ttl: Math.floor(maxAge / 1000),
+    autoRemove: 'interval',
+    autoRemoveInterval: 10,
+  });
+} else {
+  // Development fallback: use in-memory store when no MongoDB URI provided.
+  // This avoids startup failure for local development where MongoDB isn't configured.
+  // eslint-disable-next-line no-console
+  console.warn('[Session] MONGODB_URI not set — using in-memory session store (not for production)');
+  store = new session.MemoryStore();
+}
+
 module.exports = session({
   name: process.env.SESSION_NAME || 'ers_session',
   secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI,
-    ttl: Math.floor(maxAge / 1000),
-    autoRemove: 'interval',
-    autoRemoveInterval: 10,
-  }),
+  store,
   cookie: {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',

@@ -532,13 +532,17 @@ exports.newRequest = async (req, res, next) => {
         message: 'Your emergency request has been submitted and is being processed.',
       });
 
-      io.to('dispatchers').emit('newEmergencyRequest', {
+      const newReqPayload = {
         requestId: request._id,
         location: request.location,
         priority: request.priority,
         userName: req.user.name,
         userPhone: req.user.phone,
-      });
+      };
+
+      io.to('dispatchers').emit('newEmergencyRequest', newReqPayload);
+      // Also notify hospitals so their dashboards refresh
+      io.to('hospitals').emit('newEmergencyRequest', newReqPayload);
     }
 
     res.status(201).json({
