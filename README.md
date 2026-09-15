@@ -1,433 +1,550 @@
-﻿# 🚑 Emergency Response System - Production-Grade
+<!--
+╔══════════════════════════════════════════════════════════════════════╗
+║  THE OBSERVATORY · 救急システム                                      ║
+║  Emergency Response System                                           ║
+║  Where every second becomes a decision.                              ║
+╚══════════════════════════════════════════════════════════════════════╝
+-->
 
-A **production-ready** real-time emergency dispatch platform built with **Node.js · Express · MongoDB · Socket.IO · Redis**.
+<div align="center">
 
-## ✨ Production-Grade Features
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:05080D,50:7F1018,100:05080D&height=190&section=header&text=THE%20EMERGENCY%20OBSERVATORY&fontSize=42&fontColor=F4E7D0&fontAlignY=43&desc=救急%20%C2%B7%20REAL-TIME%20EMERGENCY%20RESPONSE&descSize=15&descAlignY=67&animation=fadeIn" width="100%" alt="The Emergency Observatory" />
 
-### 🔧 Core Infrastructure
-- **Advanced Rate Limiting**: Redis-backed tiered rate limiting with sliding windows
-- **Real Alert Delivery**: Slack, email, and webhook notifications for system alerts
-- **Health Checks**: Comprehensive `/health` endpoint with system diagnostics
-- **Metrics Dashboard**: Real-time visualization at `/metrics-dashboard`
-- **Load Testing**: 1000-user simulation with detailed performance analysis
+<br/>
 
-### 🛡️ Security & Observability
-- **Enterprise Security**: Helmet.js, CORS, MongoDB sanitization, CSRF protection
-- **Advanced Monitoring**: Prometheus metrics export, structured logging
-- **Alert Management**: Multi-channel alerting with cooldown prevention
-- **Audit Compliance**: Immutable audit logs with tamper-proof records
+<sub><i>観察する ・ 構築する ・ 応答する</i></sub>
 
-### ⚡ Performance & Scalability
-- **Horizontal Scaling**: Multi-instance deployment with Redis session sharing
-- **Queue Management**: BullMQ with priority queues and retry logic
-- **Load Shedding**: Graceful degradation under extreme load (10k+ users)
-- **Database Optimization**: Connection pooling, indexing, and query optimization
+<br/><br/>
 
----
+[![Node.js](https://img.shields.io/badge/NODE.JS-05080D?style=for-the-badge&logo=node.js&logoColor=F4E7D0)](https://nodejs.org/)
+[![Express](https://img.shields.io/badge/EXPRESS-05080D?style=for-the-badge&logo=express&logoColor=F4E7D0)](https://expressjs.com/)
+[![MongoDB](https://img.shields.io/badge/MONGODB-05080D?style=for-the-badge&logo=mongodb&logoColor=7CB342)](https://www.mongodb.com/)
+[![Socket.IO](https://img.shields.io/badge/SOCKET.IO-05080D?style=for-the-badge&logo=socketdotio&logoColor=F4E7D0)](https://socket.io/)
+[![Redis](https://img.shields.io/badge/REDIS-05080D?style=for-the-badge&logo=redis&logoColor=DC382D)](https://redis.io/)
 
-## Table of Contents
-1. [System Vision](#system-vision)
-2. [Architecture](#architecture)
-3. [Quick Start](#quick-start)
-4. [Production Deployment](#production-deployment)
-5. [Environment Variables](#environment-variables)
-6. [API Reference](#api-reference)
-7. [Monitoring & Alerting](#monitoring--alerting)
-8. [Load Testing](#load-testing)
-9. [Security Model](#security-model)
-10. [Running Tests](#running-tests)
-11. [Deployment](#deployment)
+<br/>
 
----
+<a href="#-01--observe"><img src="https://img.shields.io/badge/01%20OBSERVE-E63946?style=for-the-badge&labelColor=05080D" /></a>
+<a href="#-02--build"><img src="https://img.shields.io/badge/02%20BUILD-F4E7D0?style=for-the-badge&labelColor=05080D" /></a>
+<a href="#-03--research"><img src="https://img.shields.io/badge/03%20RESEARCH-F4E7D0?style=for-the-badge&labelColor=05080D" /></a>
+<a href="#-04--respond"><img src="https://img.shields.io/badge/04%20RESPOND-F4E7D0?style=for-the-badge&labelColor=05080D" /></a>
+<a href="#-05--beyond"><img src="https://img.shields.io/badge/05%20BEYOND-F4E7D0?style=for-the-badge&labelColor=05080D" /></a>
 
-## System Vision
+<br/><br/>
 
-The ERS mission and scalability blueprint is documented in [SYSTEM_VISION.md](./SYSTEM_VISION.md).
-It captures the core motto, target users, current and future scale targets, architecture layers, and growth strategy.
+<img src="https://img.shields.io/badge/STATUS-ONLINE-E63946?style=for-the-badge&labelColor=05080D" />
+<img src="https://img.shields.io/badge/VERSION-2.0.0-8B0000?style=for-the-badge&labelColor=05080D" />
+<img src="https://img.shields.io/badge/LICENSE-ISC-F4E7D0?style=for-the-badge&labelColor=05080D" />
+
+</div>
 
 ---
 
-## Architecture
+<div align="center">
+<table>
+<tr>
+<td width="62%" valign="top">
 
+<br/>
+
+# THE<br/>RESPONSE<br/>SYSTEM
+
+<sub><code>KYŪKYŪ — EMERGENCY RESPONSE</code></sub>
+
+<br/><br/>
+
+**Where technology meets urgency.**  
+**Where every second becomes a decision.**
+
+<br/>
+
+A production-ready emergency dispatch platform that connects citizens, ambulance drivers, hospitals, dispatchers and administrators through real-time coordination.
+
+<br/><br/>
+
+**[→ ENTER THE SYSTEM](#-01--observe)**
+
+</td>
+<td width="38%" valign="top">
+
+### `01 — 観察する`
+### **OBSERVE**
+<sub>See the emergency as it unfolds.</sub>
+
+<br/>
+
+### `02 — 構築する`
+### **BUILD**
+<sub>Route, dispatch and coordinate.</sub>
+
+<br/>
+
+### `03 — 研究する`
+### **RESEARCH**
+<sub>Measure what the system is doing.</sub>
+
+<br/>
+
+### `04 — 応答する`
+### **RESPOND**
+<sub>Move the right resource, fast.</sub>
+
+<br/>
+
+### `05 — 余白`
+### **BEYOND**
+<sub>Design for the failure nobody planned for.</sub>
+
+</td>
+</tr>
+</table>
+</div>
+
+---
+
+<a id="01--observe"></a>
+## `01` · 観察する · **OBSERVE**
+
+> *Understand the emergency before the system responds.*
+
+### What is this?
+
+The **Emergency Response System (ERS)** is a real-time dispatch platform designed to reduce the time between an emergency request and coordinated medical response.
+
+The platform supports **one-click emergency requests, GPS-based ambulance discovery, automated dispatch, real-time tracking, ETA updates, hospital coordination, medical records, notifications and operational analytics.**
+
+### The response loop
+
+```text
+┌──────────┐       ┌────────────┐       ┌────────────┐
+│  CITIZEN │ ───→  │   DISPATCH │ ───→  │  AMBULANCE │
+└──────────┘       └────────────┘       └─────┬──────┘
+      ↑                    │                  │
+      │                    ↓                  ↓
+      │             ┌────────────┐      ┌────────────┐
+      └──────────── │  HOSPITAL  │ ←─── │ REAL-TIME  │
+                    └────────────┘      │  TRACKING  │
+                                        └────────────┘
 ```
-emergency-response-system/
-├── index.js                    # Express server + MongoDB + Socket.IO bootstrap
-├── controllers/                # Request handlers (one per domain)
-│   ├── authController.js
-│   ├── emergencyController.js
-│   ├── dispatchController.js
-│   ├── ambulanceController.js
-│   ├── adminController.js
-│   ├── analyticsController.js
-│   └── medicalController.js
-├── middleware/
-│   ├── auth.js                 # JWT verification + token blacklist (Redis/memory)
-│   ├── role.js                 # Role-based access control
-│   ├── validate.js             # Lightweight request validator
-│   └── errorHandler.js        # Global Express error handler
-├── models/                     # Mongoose schemas
-│   ├── User.js
-│   ├── Ambulance.js
-│   ├── EmergencyRequest.js
-│   ├── DispatchLog.js
-│   └── MedicalRecord.js
-├── routes/                     # Express routers (one per domain)
-├── utils/
-│   ├── constants.js            # ALL enums - single source of truth
-│   ├── AppError.js             # Custom operational error class
-│   ├── haversine.js            # Great-circle distance calculation
-│   ├── dispatchEngine.js       # Ambulance allocation logic
-│   ├── etaCalculator.js        # OSRM routing with Haversine fallback
-│   └── redisClient.js          # Redis initialisation with graceful fallback
-└── tests/
-    ├── system.test.js          # Utilities, constants, role middleware, edge cases
-    ├── auth.test.js            # Auth controller (register, login, logout, JWT)
-    ├── dispatch.test.js        # Dispatch controller + coordinate validation
-    ├── ambulance.test.js       # Ambulance controller + status transitions
-    ├── analytics-admin.test.js # Analytics + admin controllers
-    └── security.test.js        # Security-specific regression tests
-```
 
----
+### Core capabilities
 
-## Quick Start
-
-```bash
-# 1. Clone and install
-git clone <your-repo>
-cd emergency-response-system
-npm install
-
-# 2. Configure environment
-cp .env.example .env
-# Edit .env with your MongoDB URI, JWT_SECRET, etc.
-
-# 3. Start development server
-npm run dev
-
-# 4. Run tests
-npm test
-```
-
----
-
-## Environment Variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `MONGODB_URI` | ✅ | MongoDB connection string |
-| `JWT_SECRET` | ✅ | 64-byte random hex string (generate with `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`) |
-| `JWT_EXPIRE` | - | Token lifetime (default: `7d`) |
-| `PORT` | - | HTTP port (default: `3000`) |
-| `NODE_ENV` | - | `development` or `production` |
-| `REDIS_URL` | - | Redis connection URL (required for multi-instance deployments) |
-| `CLOUDINARY_CLOUD_NAME` | - | Required for medical record file uploads |
-| `CLOUDINARY_API_KEY` | - | Required for medical record file uploads |
-| `CLOUDINARY_API_SECRET` | - | Required for medical record file uploads |
-| `OSRM_ROUTING_URL` | - | OSRM server URL for road-network ETA (falls back to Haversine) |
-| `FRONTEND_URL` | - | CORS origin (default: `http://localhost:3000`) |
-
----
-
-## API Reference
-
-### Auth  `/api/auth`
-| Method | Path | Access | Description |
-|---|---|---|---|
-| POST | `/register` | Public | Register new user |
-| POST | `/login` | Public | Login (email or phone) |
-| GET | `/me` | Private | Get current user |
-| POST | `/logout` | Private | Logout + revoke token |
-| POST | `/refresh` | Private | Refresh JWT |
-
-### Emergency  `/api/emergency`
-| Method | Path | Access | Description |
-|---|---|---|---|
-| POST | `/` | Citizen | Create SOS request |
-| GET | `/` | All roles | List requests (role-filtered) |
-| GET | `/history` | Citizen | Own request history |
-| GET | `/:id` | Related parties | Get single request |
-| PUT | `/:id/accept` | Hospital | Accept request |
-| PUT | `/:id/complete` | Driver | Mark completed |
-
-### Dispatch  `/api/dispatch`
-| Method | Path | Access | Description |
-|---|---|---|---|
-| POST | `/request` | Citizen | New emergency (auto-dispatches) |
-| GET | `/active` | Citizen | Current active request |
-| GET | `/assignments` | Driver | Current assignments |
-| PUT | `/:id/response` | Driver | Accept/reject assignment |
-| PATCH | `/:id/track` | Driver | Update location/status |
-| DELETE | `/:id` | Citizen | Cancel request |
-
-### Ambulances  `/api/ambulances`
-| Method | Path | Access | Description |
-|---|---|---|---|
-| POST | `/` | Driver | Register or update ambulance |
-| GET | `/` | Admin/Dispatcher/Driver | List ambulances |
-| GET | `/:id` | Admin/Dispatcher/Driver | Get ambulance |
-| PATCH | `/:id/status` | Driver/Admin | Update status |
-| PATCH | `/:id/location` | Driver | Update GPS location |
-
-### Admin  `/api/admin`
-| Method | Path | Access | Description |
-|---|---|---|---|
-| GET | `/users` | Admin | List all users |
-| GET | `/users/:id` | Admin | Get user by ID |
-| PUT | `/users/:id/role` | Admin | Change user role |
-| DELETE | `/users/:id` | Admin | Delete user |
-| GET | `/ambulances` | Admin | List all ambulances |
-| GET | `/stats` | Admin | System statistics |
-
-### Analytics  `/api/analytics`
-| Method | Path | Access | Description |
-|---|---|---|---|
-| GET | `/latency` | Admin | Response latency metrics |
-| GET | `/performance` | Admin | Daily performance stats |
-| GET | `/export` | Admin | Export data (JSON/CSV, max 10k rows) |
-
-### Medical Records  `/api/medical`
-| Method | Path | Access | Description |
-|---|---|---|---|
-| POST | `/upload` | Authenticated | Upload medical file |
-| GET | `/:userId` | Owner/Hospital | Get user's records |
-| GET | `/record/:id` | Owner/Hospital | Get single record |
-| DELETE | `/record/:id` | Owner | Delete record |
-| POST | `/share/:recordId` | Owner | Share with hospital |
-
----
-
-## Role System
-
-| Role | Description |
+| System | Capability |
 |---|---|
-| `CITIZEN` | Creates emergency requests, views own history, manages own medical records |
-| `DRIVER` | Receives dispatch assignments, updates ambulance location/status |
-| `HOSPITAL` | Accepts emergency requests, views patient medical records |
-| `DISPATCHER` | Views all requests and ambulances; manages dispatch queue |
-| `ADMIN` | Full access to all resources + user management + analytics |
-
-> **Note:** Users can self-register as CITIZEN, DRIVER, or HOSPITAL only.  
-> DISPATCHER and ADMIN roles must be assigned by an existing ADMIN.
-
----
-
-## Security Model
-
-- **JWT** authentication with token blacklist (Redis in production, in-memory fallback in development)
-- **httpOnly + SameSite:Strict** cookies - tokens never accessible from JavaScript
-- **Token revocation** on logout - tokens invalidated immediately, not just at expiry
-- **bcrypt** password hashing with work factor 12 (OWASP 2024 minimum)
-- **Role-based access control** on every route - no unauthenticated or wrong-role access
-- **Input sanitisation** - all pagination parameters clamped, descriptions truncated, coordinates range-validated
-- **Export DoS prevention** - analytics export hard-capped at 10,000 rows
-- **Generic error messages** for auth failures - prevents user enumeration
-- **Helmet** security headers on all responses
-- **Rate limiting** - 200 requests per 15 minutes per IP
+| `SOS` | Create and manage emergency requests |
+| `DISPATCH` | Priority-based ambulance allocation |
+| `GPS` | Live ambulance location and distance calculation |
+| `ETA` | Road-network ETA with routing fallback |
+| `TRACKING` | Real-time status and location updates |
+| `HOSPITAL` | Request acceptance and patient coordination |
+| `MEDICAL` | Secure medical record upload and sharing |
+| `ANALYTICS` | Performance, latency and operational metrics |
+| `ALERTING` | Slack, email and webhook system alerts |
 
 ---
 
-## Running Tests
+<a id="02--build"></a>
+## `02` · 構築する · **BUILD**
 
-```bash
-# All tests
-npm test
+> *Engineering the path from SOS to care.*
 
-# With coverage
-npm run test:cov
+### Architecture
 
-# Single file
-npx jest tests/auth.test.js
-
-# Pure Node (no jest needed for util/logic tests)
-node -e "require('./tests/system.test.js')"
+```text
+                         ┌──────────────────────┐
+                         │       CLIENTS        │
+                         │ Citizen · Driver     │
+                         │ Hospital · Admin     │
+                         └──────────┬───────────┘
+                                    │
+                              HTTP / WebSocket
+                                    │
+                         ┌──────────▼───────────┐
+                         │   EXPRESS / NODE.JS  │
+                         │  Auth · Routes · API │
+                         └──────────┬───────────┘
+                                    │
+              ┌─────────────────────┼─────────────────────┐
+              │                     │                     │
+       ┌──────▼──────┐      ┌──────▼──────┐      ┌──────▼──────┐
+       │  DISPATCH   │      │   REALTIME  │      │  ANALYTICS  │
+       │ Engine/Queue│      │ Socket.IO   │      │ Metrics     │
+       └──────┬──────┘      └──────┬──────┘      └──────┬──────┘
+              │                     │                     │
+              └─────────────────────┼─────────────────────┘
+                                    │
+                    ┌───────────────┼───────────────┐
+                    │                               │
+             ┌──────▼──────┐                 ┌──────▼──────┐
+             │   MongoDB   │                 │    Redis    │
+             │ Persistence │                 │ Queue/Cache │
+             └─────────────┘                 └─────────────┘
 ```
 
-### Test Coverage
+### Project structure
 
-| File | Cases | Coverage Area |
-|---|---|---|
-| `system.test.js` | 27 | Haversine, AppError, constants, role middleware, edge cases |
-| `auth.test.js` | 25 | Register (10 validation cases), login, logout, JWT security |
-| `dispatch.test.js` | 20 | Coordinates (9 bad inputs), priority/type fallbacks, ETA |
-| `ambulance.test.js` | 20 | 12 transition pairs, updateStatus auth, 50m GPS threshold |
-| `analytics-admin.test.js` | 25 | Export cap, CSV format, date validation, pagination, self-protection |
-| `security.test.js` | 20 | Token extraction, password exposure, role injection, cookie config |
-
-**Total: 137 test cases across 6 test files**
+```text
+Ambulance/
+├── controllers/          # Auth, emergency, dispatch, ambulance, admin, analytics
+├── middleware/           # JWT, RBAC, validation, sessions, uploads, errors
+├── models/               # User, Ambulance, EmergencyRequest, Hospital, MedicalRecord
+├── routes/               # Domain-specific API routers
+├── utils/                # Dispatch engine, ETA, queues, caching, monitoring
+├── public/                # Citizen, driver, hospital and admin interfaces
+├── tests/                 # Unit, integration, security and system tests
+├── scripts/               # Load tests, migrations and validation utilities
+├── config/                # Swagger and application configuration
+├── server.js              # Application/server integration
+├── index.js               # Application bootstrap
+├── docker-compose.yml     # Container orchestration
+├── dockerfile             # Production container image
+└── README.md              # You are here
+```
 
 ---
 
-## Monitoring & Alerting
+<a id="03--research"></a>
+## `03` · 研究する · **RESEARCH**
 
-### Real-Time Metrics Dashboard
-Access live system metrics at: `http://localhost:3000/metrics-dashboard`
+> *Measure the system. Find the bottleneck. Improve the response.*
 
-**Key Metrics Monitored:**
-- Request rate and error rates
-- Response time percentiles (P50, P95, P99)
-- Queue depth and dispatch performance
-- Memory and CPU usage
-- Database connection health
+### Technology stack
 
-### Alert Channels
-- **Slack**: Real-time alerts to configured channels
-- **Email**: Critical error notifications
-- **Webhooks**: Integration with external monitoring systems
-- **Cooldown Protection**: Prevents alert spam (5-minute windows)
+| Layer | Technologies |
+|---|---|
+| **Runtime** | Node.js 18+ |
+| **API** | Express.js |
+| **Database** | MongoDB · Mongoose |
+| **Realtime** | Socket.IO |
+| **Cache / Queue** | Redis · BullMQ |
+| **Authentication** | JWT · httpOnly cookies · bcrypt |
+| **Routing** | OSRM · Haversine fallback |
+| **Uploads** | Multer · Cloudinary |
+| **Notifications** | Nodemailer · Twilio · Slack/Webhooks |
+| **Observability** | Winston · Prometheus metrics |
+| **Security** | Helmet · CORS · MongoDB sanitization · rate limiting |
+| **Testing** | Jest · Supertest · MongoDB Memory Server |
+| **Deployment** | Docker · Nginx · Render-ready configuration |
 
-### Health Check Endpoint
+### Dispatch intelligence
+
+The dispatch layer combines **distance, availability, priority and ambulance state** to determine an appropriate response path. Geospatial calculations use the Haversine formula, while ETA calculation can use road-network routing and fall back when routing is unavailable.
+
+### Resilience by design
+
+```text
+           NORMAL LOAD
+               │
+               ▼
+        ┌──────────────┐
+        │ Dispatch     │
+        │ Queue        │
+        └──────┬───────┘
+               │
+        ┌──────▼───────┐
+        │ Available    │
+        │ Ambulance    │
+        └──────────────┘
+
+        HIGH LOAD / FAILURE
+               │
+        ┌──────▼────────┐
+        │ Rate Limiter  │
+        ├───────────────┤
+        │ Load Shedder  │
+        ├───────────────┤
+        │ Circuit Break │
+        ├───────────────┤
+        │ Retry / Queue │
+        └───────────────┘
+```
+
+### Security model
+
+- JWT authentication with revocation support
+- `httpOnly` + `SameSite: Strict` cookies
+- Role-based access control across protected routes
+- Password hashing with bcrypt
+- Helmet security headers
+- CORS controls
+- Input and coordinate validation
+- Pagination limits and analytics export caps
+- Rate limiting against abusive request volume
+- Immutable audit logging for sensitive operations
+
+---
+
+<a id="04--respond"></a>
+## `04` · 応答する · **RESPOND**
+
+> *From a citizen's SOS to a completed emergency request.*
+
+### 01 · REQUEST
+
+A citizen creates an emergency request through the public interface.
+
+### 02 · LOCATE
+
+The system receives the emergency coordinates and evaluates available response resources.
+
+### 03 · DISPATCH
+
+The dispatch engine and queue determine an appropriate ambulance response.
+
+### 04 · ACCEPT
+
+The driver receives the assignment and can accept or reject the response.
+
+### 05 · TRACK
+
+Ambulance location and response state can be updated in real time through Socket.IO-backed coordination.
+
+### 06 · ARRIVE
+
+The patient is transported while ETA and emergency state remain visible to the relevant roles.
+
+### 07 · COMPLETE
+
+The driver completes the request and the system retains operational history for later analysis.
+
+---
+
+### Role matrix
+
+| Role | Responsibility |
+|---|---|
+| `CITIZEN` | Create emergencies, track requests, view history and manage own medical records |
+| `DRIVER` | Receive assignments, update ambulance status and GPS location |
+| `HOSPITAL` | Accept emergency requests and access shared patient records |
+| `DISPATCHER` | Monitor requests and ambulances, manage dispatch operations |
+| `ADMIN` | User management, system oversight and analytics |
+
+> `CITIZEN`, `DRIVER` and `HOSPITAL` can self-register. `DISPATCHER` and `ADMIN` roles require administrative assignment.
+
+---
+
+### API surface
+
+<details>
+<summary><b>Authentication · /api/auth</b></summary>
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `POST` | `/register` | Register user |
+| `POST` | `/login` | Login with email or phone |
+| `GET` | `/me` | Current user |
+| `POST` | `/logout` | Revoke session |
+| `POST` | `/refresh` | Refresh JWT |
+
+</details>
+
+<details>
+<summary><b>Emergency · /api/emergency</b></summary>
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `POST` | `/` | Create SOS request |
+| `GET` | `/` | List role-filtered requests |
+| `GET` | `/history` | Citizen request history |
+| `GET` | `/:id` | Retrieve emergency |
+| `PUT` | `/:id/accept` | Hospital accepts request |
+| `PUT` | `/:id/complete` | Driver completes request |
+
+</details>
+
+<details>
+<summary><b>Dispatch · /api/dispatch</b></summary>
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `POST` | `/request` | Create and auto-dispatch emergency |
+| `GET` | `/active` | Current active request |
+| `GET` | `/assignments` | Driver assignments |
+| `PUT` | `/:id/response` | Accept/reject assignment |
+| `PATCH` | `/:id/track` | Update location/status |
+| `DELETE` | `/:id` | Cancel request |
+
+</details>
+
+<details>
+<summary><b>Ambulances · /api/ambulances</b></summary>
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `POST` | `/` | Register/update ambulance |
+| `GET` | `/` | List ambulances |
+| `GET` | `/:id` | Retrieve ambulance |
+| `PATCH` | `/:id/status` | Update ambulance status |
+| `PATCH` | `/:id/location` | Update GPS location |
+
+</details>
+
+<details>
+<summary><b>Admin · /api/admin</b></summary>
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/users` | List users |
+| `GET` | `/users/:id` | Retrieve user |
+| `PUT` | `/users/:id/role` | Change role |
+| `DELETE` | `/users/:id` | Delete user |
+| `GET` | `/ambulances` | List ambulances |
+| `GET` | `/stats` | System statistics |
+
+</details>
+
+<details>
+<summary><b>Analytics · /api/analytics</b></summary>
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/latency` | Response latency |
+| `GET` | `/performance` | Daily performance |
+| `GET` | `/export` | JSON/CSV export with row cap |
+
+</details>
+
+<details>
+<summary><b>Medical Records · /api/medical</b></summary>
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `POST` | `/upload` | Upload medical file |
+| `GET` | `/:userId` | Retrieve records |
+| `GET` | `/record/:id` | Retrieve one record |
+| `DELETE` | `/record/:id` | Delete record |
+| `POST` | `/share/:recordId` | Share with hospital |
+
+</details>
+
+---
+
+<a id="05--beyond"></a>
+## `05` · 余白 · **BEYOND**
+
+> *The system should remain useful when the situation stops being predictable.*
+
+### Production observability
+
+```text
+REQUEST RATE ────────┐
+ERROR RATE ──────────┤
+P50 / P95 / P99 ─────┤
+QUEUE DEPTH ─────────┼──→ METRICS DASHBOARD
+MEMORY / CPU ────────┤
+DB HEALTH ───────────┘
+```
+
+Live metrics are available at:
+
+`/metrics-dashboard`
+
+Health and readiness endpoints:
+
 ```bash
 curl http://localhost:3000/health
-# Returns comprehensive system health status
+curl http://localhost:3000/ready
 ```
 
----
+### Load testing
 
-## Load Testing
-
-### Quick Load Test (100 users, 1 minute)
 ```bash
+# Default load test
+npm run test:load
+
+# 100 simulated users · 60 seconds
 npm run test:load:quick
-```
 
-### Full Production Load Test (1000 users, 5 minutes)
-```bash
+# 1000 simulated users · 5 minutes
 npm run test:load:full
 ```
 
-### Custom Load Test
+### Tests
+
+The repository includes unit, integration, system and security coverage.
+
 ```bash
-node scripts/load-test.js [duration_seconds] [max_users]
+npm test
+npm run test:integration
+npm run test:all
+npm run test:cov
+npm run lint
 ```
 
-**Load Test Features:**
-- Multi-threaded user simulation
-- Realistic user behavior patterns
-- Detailed performance metrics
-- Automated pass/fail criteria
-- Result export to JSON files
+### Deployment
 
----
-
-## Production Deployment
-
-### Environment Setup
 ```bash
-# Required environment variables
-cp .env.example .env.production
-# Edit .env.production with production values
-
-# Install dependencies
+# Install
 npm install
 
-# Run production build
-npm run build
+# Development
+npm run dev
+
+# Production
+npm start
 ```
 
-### Docker Deployment
+Docker:
+
 ```bash
-# Build production image
 docker build -t ers:latest .
-
-# Run with docker-compose
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose up -d
 ```
 
-### Key Production URLs
-- **Application**: `https://your-domain.com`
-- **API Docs**: `https://your-domain.com/api-docs`
-- **Metrics**: `https://your-domain.com/metrics-dashboard`
-- **Health Check**: `https://your-domain.com/health`
-- **Readiness Check**: `https://your-domain.com/ready`
+### Environment
 
-`/health` is a lightweight liveness endpoint (always HTTP 200 with status payload).
-`/ready` is a strict dependency gate (HTTP 503 when DB/Redis dependencies are not ready).
-
-### Scaling Configuration
-```javascript
-// Auto-scaling triggers
-- CPU > 70%: Scale up instances
-- Memory > 80%: Scale up instances
-- Request rate > 1000/min: Scale up
-- Queue depth > 100: Scale up
-
-// Database scaling
-- MongoDB connection pool: 100 max
-- Redis cluster with replication
-- Read replicas for analytics
-```
+| Variable | Required | Purpose |
+|---|:---:|---|
+| `MONGODB_URI` | ✅ | MongoDB connection |
+| `JWT_SECRET` | ✅ | JWT signing secret |
+| `JWT_EXPIRE` | — | Token lifetime; defaults to `7d` |
+| `PORT` | — | HTTP port; defaults to `3000` |
+| `NODE_ENV` | — | `development` / `production` |
+| `REDIS_URL` | — | Redis connection for multi-instance operation |
+| `CLOUDINARY_CLOUD_NAME` | — | Medical file storage |
+| `CLOUDINARY_API_KEY` | — | Cloudinary authentication |
+| `CLOUDINARY_API_SECRET` | — | Cloudinary authentication |
+| `OSRM_ROUTING_URL` | — | Road-network routing endpoint |
+| `FRONTEND_URL` | — | CORS origin |
 
 ---
 
-## Bug Fixes Applied
+## SYSTEM NOTES
 
-27 bugs were identified and fixed from the original codebase:
+Additional engineering documentation lives in:
 
-| # | Severity | Description |
-|---|---|---|
-| 1 | 🔴 CRITICAL | `index.js` was a Cloudinary sample - no Express server existed |
-| 2 | 🔴 CRITICAL | `DispatchLog` used in `emergencyController` without being imported |
-| 3 | 🔴 CRITICAL | `mongoose` used for transactions in `emergencyController` without import |
-| 4 | 🔴 CRITICAL | `mongoose` used for transactions in `medicalController` without import |
-| 5 | 🔴 CRITICAL | `REQUEST_STATUS.ACCEPTED` doesn't exist - saves `undefined` to DB |
-| 6 | 🔴 CRITICAL | `REQUEST_PRIORITY.includes()` called on Object (not array) → TypeError |
-| 7 | 🔴 CRITICAL | `REQUEST_TYPES.includes()` called on Object (not array) → TypeError |
-| 8 | 🔴 CRITICAL | `.map(req => ...)` shadows outer Express `req` parameter |
-| 9 | 🔴 SECURITY | Live MongoDB + Cloudinary credentials committed to `.env.example` |
-| 10 | 🟠 SECURITY | Token accepted from `?token=` query param → logs in access logs |
-| 11 | 🟠 SECURITY | `startsWith('Bearer')` missing trailing space - malformed check |
-| 12 | 🟠 SECURITY | In-memory blacklist not shared across server instances |
-| 13 | 🟡 SECURITY | bcrypt work factor 10 (OWASP minimum is 12) |
-| 14 | 🟡 SECURITY | No row limit on analytics export → OOM / DoS |
-| 15 | 🟡 LOGIC | `requireAllRoles` always fails for multiple required roles |
-| 16 | 🟡 LOGIC | Ambulance freed before next-ambulance search - race condition window |
-| 17 | 🟡 PERF | N+1 query - 1 DB call per request document to fetch driver info |
-| 18 | 🟡 MAINTAINABILITY | `calculateDistance` copy-pasted in 2 controllers |
-| 19 | 🟡 LOGIC | Two conflicting compound indexes on EmergencyRequest |
-| 20 | 🟡 LOGIC | Duplicate `role` index on User model |
-| 21 | 🟡 LOGIC | Hardcoded status strings in `adminController` instead of constants |
-| 22 | 🟡 LOGIC | Incorrect `$cond` pattern for null date check in analytics pipeline |
-| 23 | 🟡 COMPAT | `$percentile` requires MongoDB 7.0+ - fails silently on older clusters |
-| 24 | 🟡 LOGIC | `logs[]` array used in controllers but not defined in DispatchLog schema |
-| 25 | 🟡 LOGIC | File metadata fields saved in controller but missing from MedicalRecord schema |
-| 26 | 🟡 LOGIC | Ambulance `capacity` default = 0, which is never valid |
-| 27 | 🟡 DX | Manual `updatedAt` bookkeeping instead of `timestamps: true` |
+- [`SYSTEM_VISION.md`](./SYSTEM_VISION.md) — system mission and scale blueprint
+- [`API_DOCS.md`](./API_DOCS.md) — API documentation
+- [`REALTIME_TRACKING.md`](./REALTIME_TRACKING.md) — real-time tracking architecture
+- [`PERFORMANCE_OPTIMIZATIONS.md`](./PERFORMANCE_OPTIMIZATIONS.md) — performance work
+- [`PRODUCTION_AUDIT.md`](./PRODUCTION_AUDIT.md) — production audit and hardening
+- [`DEPLOYMENT_GUIDE.md`](./DEPLOYMENT_GUIDE.md) — deployment guidance
 
 ---
 
-## Deployment
+<div align="center">
 
-### Docker (recommended)
+### `現在観察中 · NOW OBSERVING`
 
-```dockerfile
-FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-EXPOSE 3000
-CMD ["node", "index.js"]
-```
+**Emergency response is not just about speed.**  
+**It is about making the right decision when time is disappearing.**
 
-### Production checklist
+<br/>
 
-- [ ] Set `NODE_ENV=production`
-- [ ] Generate strong `JWT_SECRET` (64 hex bytes)
-- [ ] Provision Redis for token blacklist + Socket.IO adapter
-- [ ] Use MongoDB Atlas (replica set) or self-hosted replica set
-- [ ] Set `CLOUDINARY_*` vars for medical file storage
-- [ ] Configure `OSRM_ROUTING_URL` or swap in a commercial routing API
-- [ ] Place behind Nginx/ALB with SSL termination
-- [ ] Enable MongoDB read replica for analytics queries
-- [ ] Set up log aggregation (Datadog / CloudWatch / ELK)
+<a href="https://ambulance-ykea.onrender.com">
+<img src="https://img.shields.io/badge/→%20LIVE%20SYSTEM-8B0000?style=for-the-badge&labelColor=05080D" />
+</a>
 
-### Scaling to multiple instances
+<br/><br/>
 
-When running multiple Node.js pods:
-1. **Token blacklist**: Redis is required - in-memory does not persist across instances
-2. **Socket.IO**: Install `socket.io-redis` adapter so events reach clients on all pods
-3. **File uploads**: Multer writes to OS temp dir - works fine with Cloudinary since files are streamed up and temp deleted immediately
+<sub><i>救急 · 構築する · 観察する · 応答する</i></sub>
 
-## Author
-Vaishnavi Khandelwal
+<br/><br/>
+
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:05080D,50:7F1018,100:05080D&height=120&section=footer&text=%E6%95%91%E6%80%A5&fontSize=30&fontColor=F4E7D0&fontAlignY=70&animation=fadeIn" width="100%" alt="Emergency Response" />
+
+<sub><i>▓▓▓▓▓▓▓▓▓▓  response_channel.open  [ ONLINE ]  ▓▓▓▓▓▓▓▓▓▓</i></sub>
+
+</div>
+
+<!-- Built for moments when every second matters. -->
