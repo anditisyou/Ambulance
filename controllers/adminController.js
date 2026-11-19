@@ -178,6 +178,64 @@ exports.getAllAmbulances = async (req, res, next) => {
   }
 };
 
+// ─── GET /api/admin/ambulances/:id ────────────────────────────────────────────
+
+/**
+ * @desc  Get ambulance by ID
+ * @route GET /api/admin/ambulances/:id
+ * @access Private (Admin)
+ */
+exports.getAmbulanceById = async (req, res, next) => {
+  try {
+    const ambulance = await Ambulance.findById(req.params.id)
+      .populate('driverId', 'name email phone')
+      .lean();
+    if (!ambulance) throw new AppError('Ambulance not found', 404);
+    res.status(200).json({ success: true, data: ambulance });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── PUT /api/admin/ambulances/:id ────────────────────────────────────────────
+
+/**
+ * @desc  Update ambulance details
+ * @route PUT /api/admin/ambulances/:id
+ * @access Private (Admin)
+ */
+exports.updateAmbulance = async (req, res, next) => {
+  try {
+    const { plateNumber, capacity, status, equipment } = req.body;
+
+    const updateData = {};
+    if (plateNumber !== undefined) updateData.plateNumber = String(plateNumber).trim().toUpperCase();
+    if (capacity !== undefined) updateData.capacity = capacity;
+    if (status !== undefined) {
+      if (!AMBULANCE_STATUS_VALUES.includes(status)) {
+        throw new AppError(`Invalid status. Must be one of: ${AMBULANCE_STATUS_VALUES.join(', ')}`, 400);
+      }
+      updateData.status = status;
+    }
+    if (equipment !== undefined) {
+      if (!Array.isArray(equipment)) throw new AppError('Equipment must be an array', 400);
+      updateData.equipment = equipment.map(String);
+    }
+
+    const ambulance = await Ambulance.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: true }
+    ).populate('driverId', 'name email phone');
+
+    if (!ambulance) throw new AppError('Ambulance not found', 404);
+
+    res.status(200).json({ success: true, data: ambulance });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ─── GET /api/admin/stats ─────────────────────────────────────────────────────
 
 /**

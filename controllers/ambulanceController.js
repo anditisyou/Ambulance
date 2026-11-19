@@ -2,6 +2,7 @@
 
 const mongoose    = require('mongoose');
 const Ambulance  = require('../models/Ambulance');
+const EmergencyRequest = require('../models/EmergencyRequest');
 const AppError   = require('../utils/AppError');
 const { haversineDistance } = require('../utils/haversine');
 
@@ -23,6 +24,7 @@ const {
   AMBULANCE_STATUS_VALUES,
   AMBULANCE_TRANSITIONS,
   ROLES,
+  REQUEST_STATUS,
 } = require('../utils/constants');
 const { allocateQueuedRequest } = require('../utils/dispatchEngine');
 
@@ -218,6 +220,16 @@ exports.updateStatus = async (req, res, next) => {
       throw new AppError('Not authorised to update this ambulance', 403);
     }
 
+    if (role === ROLES.DRIVER && ambulance.status === AMBULANCE_STATUS.BUSY && status === AMBULANCE_STATUS.AVAILABLE) {
+      const activeRequest = await EmergencyRequest.exists({
+        assignedAmbulanceId: ambulance._id,
+        status: { $in: [REQUEST_STATUS.ASSIGNED, REQUEST_STATUS.ACCEPTED, REQUEST_STATUS.EN_ROUTE] },
+      });
+      if (activeRequest) {
+        throw new AppError('Complete or reject the active emergency before making this ambulance available', 400);
+      }
+    }
+
     // FIX: use centralised AMBULANCE_TRANSITIONS constant
     const allowed = AMBULANCE_TRANSITIONS[ambulance.status] || [];
     if (!allowed.includes(status)) {
@@ -237,7 +249,7 @@ exports.updateStatus = async (req, res, next) => {
       queueSession.startTransaction();
 
       try {
-        const result = await allocateQueuedRequest(queueSession);
+        const result = await allocateQueuedRequest({ session: queueSession, useTransaction: true });
         if (result) {
           await queueSession.commitTransaction();
 
@@ -344,9 +356,107 @@ exports.updateLocation = async (req, res, next) => {
         coordinates: [lng, lat],
         timestamp:   Date.now(),
       });
+
+      const activeRequest = await EmergencyRequest.findOne({
+        assignedAmbulanceId: ambulance._id,
+        status: { $in: [REQUEST_STATUS.ASSIGNED, REQUEST_STATUS.ACCEPTED, REQUEST_STATUS.EN_ROUTE] },
+      }).select('_id userId assignedHospital');
+      if (activeRequest) {
+        const payload = {
+          requestId: activeRequest._id,
+          ambulanceId: ambulance._id,
+          coordinates: [lng, lat],
+          timestamp: Date.now(),
+        };
+        io.to(`request_${activeRequest._id}`).emit('ambulanceLocationUpdate', payload);
+        io.to(`user_${activeRequest.userId}`).emit('ambulanceLocationUpdate', payload);
+        if (activeRequest.assignedHospital) {
+          io.to(`hospital_${activeRequest.assignedHospital}`).emit('ambulanceLocationUpdate', payload);
+        }
+      }
     }
 
     res.status(200).json({ success: true, data: ambulance });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Export ambulance data
+ */
+exports.exportData = async (req, res, next) => {
+  try {
+    const ambulance = await Ambulance.findOne({ driverId: req.user._id });
+    if (!ambulance) throw new AppError('Ambulance not found', 404);
+
+    const data = {
+      ambulance: {
+        plateNumber: ambulance.plateNumber,
+        status: ambulance.status,
+        capacity: ambulance.capacity,
+        equipment: ambulance.equipment,
+        location: ambulance.currentLocation,
+        createdAt: ambulance.createdAt,
+        updatedAt: ambulance.updatedAt,
+      }
+    };
+
+    const format = req.query.format || 'json';
+    if (format === 'csv') {
+      let csv = 'Category,Value\n';
+      csv += `Plate Number,${ambulance.plateNumber}\n`;
+      csv += `Status,${ambulance.status}\n`;
+      csv += `Capacity,${ambulance.capacity}\n`;
+      if (ambulance.equipment) {
+        csv += `Equipment,${ambulance.equipment.join('; ')}\n`;
+      }
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="ambulance-data.csv"');
+      res.send(csv);
+    } else {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', 'attachment; filename="ambulance-data.json"');
+      res.send(JSON.stringify(data, null, 2));
+    }
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Get ambulance statistics
+ */
+exports.getStatistics = async (req, res, next) => {
+  try {
+    const ambulance = await Ambulance.findOne({ driverId: req.user._id });
+    if (!ambulance) throw new AppError('Ambulance not found', 404);
+
+    // Get request statistics
+    const totalRequests = await EmergencyRequest.countDocuments({ assignedAmbulanceId: ambulance._id });
+    const completedRequests = await EmergencyRequest.countDocuments({ 
+      assignedAmbulanceId: ambulance._id, 
+      status: REQUEST_STATUS.COMPLETED 
+    });
+    const cancelledRequests = await EmergencyRequest.countDocuments({ 
+      assignedAmbulanceId: ambulance._id, 
+      status: REQUEST_STATUS.CANCELLED 
+    });
+
+    const stats = {
+      ambulance: {
+        plateNumber: ambulance.plateNumber,
+        status: ambulance.status,
+        capacity: ambulance.capacity,
+        totalRequests,
+        completedRequests,
+        cancelledRequests,
+        activeRequests: totalRequests - completedRequests - cancelledRequests,
+      }
+    };
+
+    res.status(200).json({ success: true, data: stats });
   } catch (err) {
     next(err);
   }

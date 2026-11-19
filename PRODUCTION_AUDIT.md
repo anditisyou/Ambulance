@@ -1,7 +1,7 @@
 # Production Readiness Audit - ERS Mission-Critical System
 
 **Audit Date**: April 8, 2026  
-**System**: Emergency Response System (10k+ users ready)  
+**System**: Emergency Response System research prototype; no capacity claim is established.  
 **Scope**: Critical production gaps, race conditions, data integrity, and operational risks
 
 ---

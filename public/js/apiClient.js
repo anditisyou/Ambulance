@@ -6,6 +6,18 @@
   const DEFAULT_TIMEOUT = 15000;
   const MAX_RETRIES = 3;
   const RETRY_STATUS = [429, 502, 503, 504]; // Added 429 for rate limiting
+  const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+  const CSRF_COOKIE_NAME = 'ers_csrf';
+  const CSRF_HEADER_NAME = 'X-CSRF-Token';
+
+  const getCookie = (name) => {
+    const prefix = `${name}=`;
+    return document.cookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(prefix))
+      ?.slice(prefix.length) || null;
+  };
 
   const authState = {
     getUser() {
@@ -16,49 +28,34 @@
         return null;
       }
     },
-    getCookie(name) {
-      try {
-        const cookies = document.cookie.split(';').reduce((acc, pair) => {
-          const [key, ...valueParts] = pair.split('=');
-          if (!key || valueParts.length === 0) return acc;
-          acc[key.trim()] = decodeURIComponent(valueParts.join('=').trim());
-          return acc;
-        }, {});
-        return cookies[name] || null;
-      } catch (_) {
-        return null;
-      }
-    },
     getToken() {
-      try {
-        return sessionStorage.getItem('ersToken') || this.getCookie('token');
-      } catch (_) {
-        return this.getCookie('token');
-      }
+      return null;
     },
     setToken(token) {
-      if (!token) return;
-      try {
-        sessionStorage.setItem('ersToken', token);
-      } catch (_) {
-        // ignore storage failures
-      }
+      // JWTs are issued as httpOnly cookies; JavaScript should not persist them.
+    },
+    getCsrfToken() {
+      return getCookie(CSRF_COOKIE_NAME);
     },
     setUser(user, token) {
       if (!user) return;
       try {
         sessionStorage.setItem('ersUser', JSON.stringify(user));
-        if (token) sessionStorage.setItem('ersToken', token);
       } catch (_) {
         // ignore storage failures
       }
     },
     clear() {
       sessionStorage.removeItem('ersUser');
-      sessionStorage.removeItem('ersToken');
       localStorage.removeItem(OFFLINE_QUEUE_KEY);
     },
   };
+
+  try {
+    sessionStorage.removeItem('ersToken');
+  } catch (_) {
+    // ignore storage failures
+  }
 
   const OFFLINE_QUEUE_KEY = 'ersOfflineQueue';
   const MAX_OFFLINE_QUEUE = 50;
@@ -180,6 +177,10 @@
       if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json');
       }
+      if (!SAFE_METHODS.has(method) && !headers.has(CSRF_HEADER_NAME)) {
+        const csrfToken = authState.getCsrfToken();
+        if (csrfToken) headers.set(CSRF_HEADER_NAME, csrfToken);
+      }
 
       const body = init.body instanceof FormData ? null : typeof init.body === 'string' ? init.body : JSON.stringify(init.body);
       enqueueOfflineRequest(url, {
@@ -199,19 +200,20 @@
     const controller = new AbortController();
     const timeout = init.timeout || DEFAULT_TIMEOUT;
     const combinedSignal = init.signal || controller.signal;
+    let timeoutId = null;
 
     if (!init.signal) {
-      setTimeout(() => controller.abort(), timeout);
+      timeoutId = setTimeout(() => controller.abort(), timeout);
     }
 
     const headers = new Headers(init.headers || {});
     headers.set('Accept', 'application/json');
-    const token = authState.getToken();
-    if (token && !headers.has('Authorization')) {
-      headers.set('Authorization', `Bearer ${token}`);
-    }
     if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
+    }
+    if (!SAFE_METHODS.has(method) && !headers.has(CSRF_HEADER_NAME)) {
+      const csrfToken = authState.getCsrfToken();
+      if (csrfToken) headers.set(CSRF_HEADER_NAME, csrfToken);
     }
 
     const options = {
@@ -222,45 +224,49 @@
     };
 
     let attempt = 0;
-    while (attempt <= MAX_RETRIES) {
-      try {
-        const response = await fetch(url, options);
-        const result = await parseResponse(response);
+    try {
+      while (attempt <= MAX_RETRIES) {
+        try {
+          const response = await fetch(url, options);
+          const result = await parseResponse(response);
 
-        if (response.status === 401 || response.status === 403) {
-          handleUnauthorized();
-          throw new Error(result.message || 'Authentication required');
-        }
+          if (response.status === 401 || response.status === 403) {
+            handleUnauthorized();
+            throw new Error(result.message || 'Authentication required');
+          }
 
-        if (!response.ok) {
-          const message = result.message || `Request failed with status ${response.status}`;
-          const error = new Error(message);
-          error.status = response.status;
-          error.response = result;
+          if (!response.ok) {
+            const message = result.message || `Request failed with status ${response.status}`;
+            const error = new Error(message);
+            error.status = response.status;
+            error.response = result;
+            throw error;
+          }
+
+          return result;
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            const abortError = new Error('Request timed out. Please check your connection and try again.');
+            abortError.name = error.name;
+            abortError.status = error.status || 0;
+            throw abortError;
+          }
+
+          const status = error.status || 0;
+          if (attempt < MAX_RETRIES && (RETRY_STATUS.includes(status) || status === 0)) {
+            attempt += 1;
+            // Exponential backoff with jitter to prevent thundering herd
+            const baseDelay = 200 * 2 ** attempt;
+            const jitter = Math.random() * 0.1 * baseDelay;
+            await delay(baseDelay + jitter);
+            continue;
+          }
+
           throw error;
         }
-
-        return result;
-      } catch (error) {
-        if (error.name === 'AbortError') {
-          const abortError = new Error('Request cancelled or timed out');
-          abortError.name = error.name;
-          abortError.status = error.status || 0;
-          throw abortError;
-        }
-
-        const status = error.status || 0;
-        if (attempt < MAX_RETRIES && (RETRY_STATUS.includes(status) || status === 0)) {
-          attempt += 1;
-          // Exponential backoff with jitter to prevent thundering herd
-          const baseDelay = 200 * 2 ** attempt;
-          const jitter = Math.random() * 0.1 * baseDelay; // 10% jitter
-          await delay(baseDelay + jitter);
-          continue;
-        }
-
-        throw error;
       }
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
     }
   };
 

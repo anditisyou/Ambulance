@@ -11,6 +11,8 @@ let socket = null;
 let refreshInterval = null;
 let selectedFile = null;
 let isCheckingActiveEmergency = false;
+let activeEmergencyDetails = null;
+let latestAmbulanceCoordinates = null;
 const modalFocusRestoreMap = new WeakMap();
 
 function setupModalAccessibility() {
@@ -58,9 +60,12 @@ document.addEventListener('DOMContentLoaded', () => {
     loadMedicalRecords(user.id || user._id);
     checkActiveEmergency();
 
+    // Socket.IO provides instant updates. This short fallback keeps the active
+    // emergency accurate when a browser extension or transient socket failure
+    // prevents real-time events from arriving.
     refreshInterval = setInterval(() => {
         checkActiveEmergency();
-    }, 30000);
+    }, 5000);
 
     setupDragAndDrop();
 });
@@ -71,11 +76,9 @@ window.addEventListener('beforeunload', () => {
 });
 
 function initSocket() {
-    const token = apiClient.authState.getToken();
     socket = io({
         path: '/socket.io',
         transports: ['polling', 'websocket'],
-        auth: { token },
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
@@ -116,11 +119,32 @@ function initSocket() {
         showNotification('Your emergency request has been cancelled', 'info');
         checkActiveEmergency();
     });
+
+    socket.on('emergencyCompleted', () => {
+        showNotification('Your emergency ride has been marked complete.', 'success');
+        checkActiveEmergency();
+    });
+
+    socket.on('requestCompleted', () => checkActiveEmergency());
+
+    socket.on('statusUpdate', () => checkActiveEmergency());
+
+    socket.on('ambulanceLocationUpdate', (data) => {
+        if (!data?.coordinates || String(data.requestId) !== String(window.activeEmergencyId)) return;
+        latestAmbulanceCoordinates = data.coordinates;
+        refreshLiveMap();
+    });
+
+    socket.on('locationUpdate', (data) => {
+        if (!data?.coordinates || String(data.requestId) !== String(window.activeEmergencyId)) return;
+        latestAmbulanceCoordinates = data.coordinates;
+        refreshLiveMap();
+    });
 }
 
 async function loadMedicalRecords(userId) {
     try {
-        const data = await apiClient.get(`/medical/user/${userId}`);
+        const data = await apiClient.get(`/api/medical/user/${userId}`, { timeout: 30000 });
         if (data.success) {
             displayMedicalRecords(data.data);
         } else {
@@ -129,7 +153,12 @@ async function loadMedicalRecords(userId) {
         }
     } catch (error) {
         console.error('Error loading medical records:', error);
-        showNotification('Error loading medical records', 'error');
+        const container = document.getElementById('medicalRecords');
+        if (container && error.name === 'AbortError') {
+            container.innerHTML = '<div class="empty-records"><p>Medical records are taking longer to load. Please refresh and try again.</p></div>';
+        } else {
+            showNotification('Unable to load medical records right now.', 'error');
+        }
     }
 }
 
@@ -163,7 +192,7 @@ function displayMedicalRecords(records) {
                     ${record.fileSize ? `<small>${(record.fileSize / 1024).toFixed(2)} KB</small>` : ''}
                 </div>
                 <div class="record-actions">
-                    <button class="record-btn" onclick="viewRecord('${record.fileUrl}', '${record.recordType}')">
+                    <button class="record-btn" onclick="viewRecord('${record.viewUrl || record.fileUrl}', '${record.recordType}')">
                         <i class="fas fa-eye"></i>
                     </button>
                     <button class="record-btn" onclick="deleteRecord('${record._id}')">
@@ -193,7 +222,7 @@ function viewRecord(url, recordType) {
         return;
     }
     
-    if (recordType === 'pdf') {
+    if (recordType === 'pdf' && /^https?:\/\//.test(url)) {
         const googleViewer = `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
         window.open(googleViewer, '_blank');
     } else {
@@ -205,7 +234,7 @@ async function deleteRecord(recordId) {
     if (!confirm('Are you sure you want to delete this record?')) return;
 
     try {
-        const data = await apiClient.delete(`/medical/record/${recordId}`);
+        const data = await apiClient.delete(`/api/medical/record/${recordId}`);
         if (data.success) {
             showNotification('Record deleted successfully', 'success');
             const user = apiClient.authState.getUser();
@@ -373,6 +402,10 @@ document.getElementById('uploadForm')?.addEventListener('submit', async (e) => {
             xhr.onabort = () => reject(new Error('Upload cancelled'));
             
             xhr.open('POST', '/api/medical/upload');
+            const csrfToken = apiClient.authState.getCsrfToken?.();
+            if (csrfToken) {
+                xhr.setRequestHeader('X-CSRF-Token', csrfToken);
+            }
             xhr.send(formData);
         });
         
@@ -422,7 +455,19 @@ document.getElementById('uploadForm')?.addEventListener('submit', async (e) => {
 
 function setupDragAndDrop() {
     const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('medicalFile');
     if (!uploadArea) return;
+
+    // The file input is intentionally hidden; the visible drop zone must
+    // still open the native picker when clicked or activated by keyboard.
+    const openFilePicker = () => fileInput?.click();
+    uploadArea.addEventListener('click', openFilePicker);
+    uploadArea.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openFilePicker();
+        }
+    });
     
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
         uploadArea.addEventListener(eventName, preventDefaults, false);
@@ -454,8 +499,6 @@ function setupDragAndDrop() {
     function handleDrop(e) {
         const dt = e.dataTransfer;
         const files = dt.files;
-        const fileInput = document.getElementById('medicalFile');
-        
         if (files.length > 0 && fileInput) {
             fileInput.files = files;
             const event = new Event('change', { bubbles: true });
@@ -542,7 +585,17 @@ async function triggerSOS() {
             }
         } catch (error) {
             console.error('Error triggering SOS:', error);
-            showNotification(error.message || 'Error triggering SOS. Please try again.', 'error');
+            const message = error.name === 'AbortError'
+                ? 'The emergency request is taking longer than expected. Check your connection and try again.'
+                : (error.message || 'Error triggering SOS. Please try again.');
+
+            if (/already have an active emergency request/i.test(message)) {
+                checkActiveEmergency();
+                const modalElement = document.getElementById('sosModal');
+                window.bootstrap?.Modal.getInstance(modalElement)?.hide();
+            }
+
+            showNotification(message, 'error');
         } finally {
             if (sosButton) {
                 sosButton.innerHTML = originalText;
@@ -552,12 +605,19 @@ async function triggerSOS() {
         }
     }, (error) => {
         console.error('Geolocation error:', error);
-        showNotification('Error getting your location. Please enable location services.', 'error');
+        const message = error.code === 3
+            ? 'Location request timed out. Please enable location services and try again.'
+            : 'Unable to get your location. Please enable location services.';
+        showNotification(message, 'error');
         if (sosButton) {
             sosButton.innerHTML = originalText;
             sosButton.style.opacity = '';
             sosButton.style.pointerEvents = '';
         }
+    }, {
+        enableHighAccuracy: false,
+        maximumAge: 60000,
+        timeout: 10000,
     });
 }
 
@@ -568,15 +628,17 @@ async function checkActiveEmergency() {
 
     isCheckingActiveEmergency = true;
     try {
-        const data = await apiClient.get('/api/dispatch/active');
+        const data = await apiClient.get('/api/emergency/active');
         const activeDiv = document.getElementById('activeEmergency');
         const cancelBtn = document.getElementById('cancelEmergencyBtn');
+        const trackBtn = document.getElementById('trackAmbulanceBtn');
 
         if (data.data && data.data.status !== 'COMPLETED' && data.data.status !== 'CANCELLED') {
             if (activeDiv) activeDiv.style.display = 'flex';
             const statusText = `Status: ${data.data.status}${data.data.eta ? ` | ETA: ${data.data.eta} min` : ''}`;
             const emergencyStatus = document.getElementById('emergencyStatus');
             if (emergencyStatus) emergencyStatus.textContent = statusText;
+            updateAssignedResponder(data.data);
 
             const cancellableStatuses = ['PENDING', 'ASSIGNED'];
             if (cancelBtn) {
@@ -586,12 +648,18 @@ async function checkActiveEmergency() {
             }
 
             window.activeEmergencyId = data.data._id;
+            activeEmergencyDetails = data.data;
+            latestAmbulanceCoordinates = data.data.assignedAmbulanceId?.currentLocation?.coordinates || latestAmbulanceCoordinates;
+            if (trackBtn) trackBtn.style.display = data.data.assignedAmbulanceId ? 'inline-block' : 'none';
 
             if (socket && data.data._id) socket.emit('join', { requestId: data.data._id });
         } else {
             if (activeDiv) activeDiv.style.display = 'none';
             if (cancelBtn) cancelBtn.style.display = 'none';
             window.activeEmergencyId = null;
+            activeEmergencyDetails = null;
+            latestAmbulanceCoordinates = null;
+            if (trackBtn) trackBtn.style.display = 'none';
         }
     } catch (error) {
         console.error('Error checking active emergency:', error);
@@ -600,10 +668,64 @@ async function checkActiveEmergency() {
             const activeDiv = document.getElementById('activeEmergency');
             if (activeDiv) activeDiv.style.display = 'none';
             window.activeEmergencyId = null;
+            activeEmergencyDetails = null;
+            latestAmbulanceCoordinates = null;
         }
     } finally {
         isCheckingActiveEmergency = false;
     }
+}
+
+function showLiveMap() {
+    if (!activeEmergencyDetails?.location?.coordinates) {
+        showNotification('Live tracking is not available yet.', 'warning');
+        return;
+    }
+
+    let modal = document.getElementById('liveTrackingModal');
+    if (!modal) {
+        document.body.insertAdjacentHTML('beforeend', '<div class="modal fade" id="liveTrackingModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Live Ambulance Tracking</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body p-0"><iframe id="liveTrackingFrame" title="Ambulance route to patient" style="width:100%;height:460px;border:0" loading="lazy"></iframe></div></div></div></div>');
+        modal = document.getElementById('liveTrackingModal');
+    }
+    refreshLiveMap();
+    bootstrap.Modal.getOrCreateInstance(modal).show();
+}
+
+function refreshLiveMap() {
+    const frame = document.getElementById('liveTrackingFrame');
+    const patient = activeEmergencyDetails?.location?.coordinates;
+    if (!frame || !patient) return;
+    const [patientLng, patientLat] = patient;
+    const [ambulanceLng, ambulanceLat] = latestAmbulanceCoordinates || patient;
+    frame.src = `https://www.google.com/maps?output=embed&f=d&saddr=${encodeURIComponent(`${ambulanceLat},${ambulanceLng}`)}&daddr=${encodeURIComponent(`${patientLat},${patientLng}`)}`;
+}
+
+function updateAssignedResponder(request) {
+    const responder = document.getElementById('assignedResponder');
+    const badge = document.getElementById('emergencyBadge');
+    if (!responder || !badge) return;
+
+    const ambulance = request.assignedAmbulanceId;
+    const driver = ambulance?.driverId;
+    const hospital = request.assignedHospital;
+    const vehicle = ambulance?.plateNumber ? `Ambulance ${ambulance.plateNumber}` : 'An ambulance';
+    const driverName = driver?.name || '';
+    const hospitalName = hospital?.name || '';
+
+    if (ambulance) {
+        const driverDetail = driverName ? `, driver ${driverName}` : '';
+        const hospitalDetail = hospitalName ? ` | Hospital: ${hospitalName}` : '';
+        responder.textContent = `${vehicle} assigned${driverDetail}${hospitalDetail}`;
+        badge.innerHTML = request.status === 'EN_ROUTE'
+            ? '<i class="fas fa-ambulance me-2"></i><span>Ambulance En Route</span>'
+            : '<i class="fas fa-check-circle me-2"></i><span>Ambulance Assigned</span>';
+        return;
+    }
+
+    responder.textContent = hospitalName
+        ? `Hospital assigned: ${hospitalName}. Awaiting ambulance assignment.`
+        : 'Awaiting ambulance assignment';
+    badge.innerHTML = '<i class="fas fa-clock me-2"></i><span>Awaiting Response</span>';
 }
 
 async function viewEmergencyHistory() {
@@ -636,15 +758,31 @@ function displayEmergencyHistory(history) {
     let html = '<div class="list-group">';
     history.forEach(item => {
         const date = new Date(item.requestTime || item.createdAt).toLocaleString();
+        const ambulance = item.assignedAmbulanceId;
+        const driver = ambulance?.driverId;
+        const hospital = item.assignedHospital;
+        const assignmentDetails = [];
+
+        if (ambulance?.plateNumber) {
+            assignmentDetails.push(`<small><strong>Ambulance:</strong> ${escapeHtml(ambulance.plateNumber)}</small>`);
+        }
+        if (driver?.name) {
+            assignmentDetails.push(`<small><strong>Driver:</strong> ${escapeHtml(driver.name)}</small>`);
+        }
+        if (hospital?.name) {
+            assignmentDetails.push(`<small><strong>Hospital:</strong> ${escapeHtml(hospital.name)}</small>`);
+        }
+
         html += `
             <div class="list-group-item">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="mb-1">Emergency Request - ${item.type || 'MEDICAL'}</h6>
+                        <h6 class="mb-1">Emergency Request - ${escapeHtml(item.type || 'MEDICAL')}</h6>
                         <small>${date}</small>
                         ${item.location?.coordinates ? `<br><small>Location: ${item.location.coordinates[1].toFixed(4)}, ${item.location.coordinates[0].toFixed(4)}</small>` : ''}
+                        ${assignmentDetails.length ? `<br>${assignmentDetails.join('<br>')}` : ''}
                     </div>
-                    <span class="badge bg-${getStatusColor(item.status)}">${item.status}</span>
+                    <span class="badge bg-${getStatusColor(item.status)}">${escapeHtml(item.status || 'UNKNOWN')}</span>
                 </div>
             </div>
         `;
@@ -736,7 +874,9 @@ async function cancelEmergency() {
         }
     } catch (error) {
         console.error('Error cancelling emergency:', error);
-        showNotification(error.message || 'Failed to cancel emergency request', 'error');
+        showNotification(error.name === 'AbortError'
+            ? 'Cancellation is taking longer than expected. Please refresh and check the request status.'
+            : (error.message || 'Failed to cancel emergency request'), 'error');
         
         const cancelBtn = document.getElementById('cancelEmergencyBtn');
         if (cancelBtn) {

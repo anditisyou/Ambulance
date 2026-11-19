@@ -121,7 +121,7 @@ router.get(
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('X-Accel-Buffering', 'no');
 
       // Send initial connection message
       res.write('data: {"type":"connected","message":"Tracking stream started"}\n\n');
@@ -129,9 +129,22 @@ router.get(
       // Subscribe to location updates via Redis pub/sub
       const subscriber = redisClient.duplicate();
       const channel = `driver:location:${ambulanceId}`;
+      let active = true;
+      let keepAlive;
+      let maxDuration;
+
+      const cleanup = () => {
+        if (!active) return;
+        active = false;
+        if (keepAlive) clearInterval(keepAlive);
+        if (maxDuration) clearTimeout(maxDuration);
+        subscriber.unsubscribe(channel).catch(() => {});
+        subscriber.quit().catch(() => {});
+        logger.info(`SSE tracking stream closed for ambulance ${ambulanceId}`);
+      };
 
       subscriber.on('message', (chan, message) => {
-        if (chan === channel) {
+        if (active && chan === channel && !res.writableEnded) {
           try {
             const data = JSON.parse(message);
             res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -145,25 +158,23 @@ router.get(
         if (err) {
           logger.error(`Subscribe failed: ${err.message}`);
           res.write('data: {"type":"error","message":"Subscription failed"}\n\n');
+          cleanup();
           res.end();
         }
       });
 
-      // Clean up on disconnect
-      req.on('close', () => {
-        subscriber.unsubscribe(channel);
-        subscriber.quit();
-        logger.info(`SSE tracking stream closed for ambulance ${ambulanceId}`);
-      });
-
-      // Send keep-alive every 30 seconds
-      const keepAlive = setInterval(() => {
-        res.write(':keep-alive\n\n');
+      // Bound long-lived streams and make every exit path release resources.
+      maxDuration = setTimeout(() => {
+        cleanup();
+        if (!res.writableEnded) res.end();
+      }, 5 * 60 * 1000);
+      keepAlive = setInterval(() => {
+        if (active && !res.writableEnded) res.write(':keep-alive\n\n');
       }, 30000);
-
-      req.on('close', () => {
-        clearInterval(keepAlive);
-      });
+      req.on('close', cleanup);
+      req.on('error', cleanup);
+      res.on('close', cleanup);
+      res.on('error', cleanup);
     } catch (err) {
       logger.error(`Tracking stream failed: ${err.message}`);
       res.status(500).json({ error: 'Tracking failed' });

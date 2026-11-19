@@ -21,8 +21,8 @@ This system is not only about dispatching ambulances. It is designed for:
 
 ### Current
 
-- 1,000+ concurrent users (validated)
-- Peak bursts of 2,000 to 5,000 incoming requests
+- Reproducible experiments in the 1,000-5,000 simulated user/request range
+- Measured burst behavior recorded with the load-test runner
 
 ### Future
 
@@ -61,7 +61,7 @@ User -> API -> Queue -> Worker -> DB -> Socket -> UI
 7. Observability Layer
 - Metrics, alerts, and structured logs for operational control
 
-## Why This Scales
+## Hypotheses To Evaluate
 
 1. Queue-based design
 - Protects API from processing spikes
@@ -99,11 +99,6 @@ User -> API -> Queue -> Worker -> DB -> Socket -> UI
 - Evaluate Kafka for high-throughput event pipelines
 - Move toward geo-distributed deployment where needed
 
-## Real-World Guarantees
+## Research Boundaries
 
-The architecture is designed to ensure:
-- No lost emergency requests
-- No duplicate ambulance assignment
-- No stuck or ambiguous request states
-- Fast response under pressure
-- Reliable dispatch with self-healing behavior
+This is a research prototype. Implemented mechanisms are subject to automated tests and environment-specific experiments; they do not establish production readiness, clinical safety, availability guarantees, or general capacity claims.

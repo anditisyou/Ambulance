@@ -2,10 +2,14 @@
 
 const mongoose = require('mongoose');
 const {
+  REQUEST_STATUS,
   REQUEST_STATUS_VALUES,
+  REQUEST_PRIORITY,
   REQUEST_PRIORITY_VALUES,
   REQUEST_TYPES_VALUES,
 } = require('../utils/constants');
+const { publicStatusForAssignmentState } = require('../utils/requestStateMachine');
+const { encrypt, decrypt } = require('../utils/encryption');
 
 /**
  * EmergencyRequest schema.
@@ -93,6 +97,13 @@ const emergencyRequestSchema = new mongoose.Schema(
       default: '',
     },
 
+    // Clinical information is not part of dispatch matching or indexing. It is
+    // stored as one authenticated encrypted payload rather than plaintext.
+    encryptedClinicalData: {
+      type: mongoose.Schema.Types.Mixed,
+      select: false,
+    },
+
     /** GeoJSON Point — [longitude, latitude] */
     location: {
       type: {
@@ -110,6 +121,10 @@ const emergencyRequestSchema = new mongoose.Schema(
       type:    String,
       enum:    REQUEST_PRIORITY_VALUES,
       default: 'MEDIUM',
+      set: (value) => {
+        const normalized = String(value || '').toUpperCase();
+        return REQUEST_PRIORITY_VALUES.includes(normalized) ? normalized : REQUEST_PRIORITY.MEDIUM;
+      },
       index:   true,
     },
 
@@ -124,6 +139,11 @@ const emergencyRequestSchema = new mongoose.Schema(
       type:   mongoose.Schema.Types.ObjectId,
       ref:    'User',
       sparse: true,
+    },
+
+    assignedBedType: {
+      type: String,
+      enum: ['ICU', 'EMERGENCY', 'GENERAL', 'PEDIATRIC', 'BURN'],
     },
 
     assignedAmbulanceId: {
@@ -144,7 +164,7 @@ const emergencyRequestSchema = new mongoose.Schema(
     // Tracks assignment state: PENDING → ASSIGNED → ACCEPTED → EN_ROUTE → COMPLETED
     assignmentState: {
       type:    String,
-      enum:    ['PENDING', 'ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'REJECTED'],
+      enum:    [...REQUEST_STATUS_VALUES, 'REJECTED'],
       default: 'PENDING',
       index:   true,
     },
@@ -180,7 +200,23 @@ const emergencyRequestSchema = new mongoose.Schema(
     // Rejection timestamp for audit
     rejectionTime: Date,
 
+    stateHistory: [{
+      from: String,
+      to: String,
+      timestamp: {
+        type: Date,
+        default: Date.now,
+      },
+      context: mongoose.Schema.Types.Mixed,
+      userId: mongoose.Schema.Types.ObjectId,
+    }],
+
     completionTime: Date,
+
+    // Logical retention marker only. It never asserts that an external archive
+    // object was created or that the record left MongoDB.
+    logicalArchived: { type: Boolean, default: false, index: true },
+    logicalArchivedAt: Date,
   },
   {
     collection: 'emergency_requests',
@@ -204,5 +240,57 @@ emergencyRequestSchema.index({ assignedHospital: 1, status: 1 }, { sparse: true 
 emergencyRequestSchema.index({ assignmentState: 1, assignmentAcceptanceDeadline: 1 }, { sparse: true }); // SLA monitoring
 emergencyRequestSchema.index({ createdAt: -1 }); // Recent requests
 emergencyRequestSchema.index({ updatedAt: -1 }); // Recent updates
+
+emergencyRequestSchema.pre('validate', function keepAssignmentStateConsistent(next) {
+  const statusBackedStates = new Set(REQUEST_STATUS_VALUES);
+
+  if (this.assignmentState === 'REJECTED') {
+    this.status = REQUEST_STATUS.PENDING;
+    return next();
+  }
+
+  if (this.isModified('status') && !this.isModified('assignmentState') && statusBackedStates.has(this.status)) {
+    this.assignmentState = this.status;
+  }
+
+  const mirroredStatus = publicStatusForAssignmentState(this.assignmentState);
+  if (mirroredStatus) {
+    this.status = mirroredStatus;
+  }
+
+  next();
+});
+
+emergencyRequestSchema.pre('save', function encryptClinicalData(next) {
+  const clinicalData = {
+    allergies: this.allergies,
+    vitals: this.vitals && this.vitals.toObject ? this.vitals.toObject() : this.vitals,
+    triageNotes: this.triageNotes,
+    medicalHistorySummary: this.medicalHistorySummary,
+  };
+  const hasClinicalData = Object.values(clinicalData).some((value) => (
+    value && (typeof value !== 'object' || Object.values(value).some((entry) => entry != null && entry !== ''))
+  ));
+
+  if (hasClinicalData && (
+    this.isNew || this.isModified('allergies') || this.isModified('vitals') ||
+    this.isModified('triageNotes') || this.isModified('medicalHistorySummary')
+  )) {
+    this.encryptedClinicalData = encrypt(clinicalData);
+    this.allergies = undefined;
+    this.vitals = undefined;
+    this.triageNotes = undefined;
+    this.medicalHistorySummary = undefined;
+  }
+  next();
+});
+
+emergencyRequestSchema.methods.getDecryptedClinicalData = function getDecryptedClinicalData() {
+  return this.encryptedClinicalData ? decrypt(this.encryptedClinicalData, true) : null;
+};
+
+emergencyRequestSchema.statics.decryptClinicalData = function decryptClinicalData(request) {
+  return request?.encryptedClinicalData ? decrypt(request.encryptedClinicalData, true) : null;
+};
 
 module.exports = mongoose.model('EmergencyRequest', emergencyRequestSchema);

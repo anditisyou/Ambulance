@@ -27,5 +27,6 @@ router.get('/history',    authorize(ROLES.CITIZEN),                       ctrl.g
 router.get('/:id',        authorize(ROLES.ADMIN, ROLES.DISPATCHER, ROLES.HOSPITAL, ROLES.DRIVER, ROLES.CITIZEN), ctrl.getEmergencyRequest);
 router.put('/:id/accept', authorize(ROLES.HOSPITAL),                      ctrl.acceptEmergencyRequest);
 router.put('/:id/complete', authorize(ROLES.DRIVER),                      ctrl.completeEmergencyRequest);
+router.delete('/:id',     authorize(ROLES.CITIZEN),                       dispatchCtrl.cancelRequest);
 
 module.exports = router;

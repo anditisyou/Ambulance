@@ -76,6 +76,10 @@ const hospitalSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    isAvailable: {
+      type: Boolean,
+      default: true,
+    },
     capacityStatus: {
       type: String,
       enum: ['AVAILABLE', 'LIMITED', 'FULL', 'CRITICAL'],

@@ -25,6 +25,9 @@ const handleJWTError = () =>
 const handleJWTExpired = () =>
   new AppError('Authentication token expired - please log in again.', 401);
 
+const handlePayloadTooLarge = () =>
+  new AppError('Request payload too large', 413);
+
 const handleMongooseOperationalError = (err) => {
   const transientNames = new Set([
     'MongooseError',
@@ -74,11 +77,24 @@ const globalErrorHandler = (err, req, res, next) => {
   err.statusCode = err.statusCode || 500;
   err.status = err.status || 'error';
 
+  if (err.name === 'CastError') {
+    const castError = handleCastError(err);
+    return process.env.NODE_ENV === 'development'
+      ? sendDevError(castError, res)
+      : sendProdError(castError, res);
+  }
+
   if (process.env.NODE_ENV === 'development') {
     return sendDevError(err, res);
   }
+  if (err.type === 'entity.too.large' || err.status === 413 || err.statusCode === 413) {
+    return sendProdError(handlePayloadTooLarge(), res);
+  }
 
   let error = Object.assign(Object.create(Object.getPrototypeOf(err)), err);
+  error.message = err.message;
+  error.name = err.name;
+  if (err.stack) error.stack = err.stack;
 
   if (error.name === 'CastError') error = handleCastError(error);
   if (error.code === 11000) error = handleDuplicateKey(error);

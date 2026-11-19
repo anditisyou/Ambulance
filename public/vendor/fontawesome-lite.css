@@ -1,0 +1,34 @@
+/* Local icon fallback. Uses simple symbols so pages do not collapse when Font Awesome CDN is unavailable. */
+.fa, .fas, .far, .fa-solid {
+  display: inline-block;
+  width: 1.1em;
+  text-align: center;
+  font-style: normal;
+  line-height: 1;
+}
+.fa-ambulance::before { content: "A"; }
+.fa-hospital-user::before, .fa-hospital::before { content: "H"; }
+.fa-sign-out-alt::before, .fa-right-from-bracket::before { content: "X"; }
+.fa-location-dot::before, .fa-map-marker-alt::before { content: "@"; }
+.fa-clock::before { content: "T"; }
+.fa-check-circle::before { content: "OK"; font-size: .72em; }
+.fa-chart-line::before, .fa-chart-bar::before { content: "#"; }
+.fa-exclamation-triangle::before, .fa-triangle-exclamation::before { content: "!"; }
+.fa-search::before { content: "?"; }
+.fa-sync-alt::before, .fa-rotate::before { content: "R"; }
+.fa-download::before, .fa-file-arrow-down::before { content: "D"; }
+.fa-notes-medical::before { content: "+"; }
+.fa-procedures::before, .fa-bed-pulse::before, .fa-bed::before { content: "B"; }
+.fa-floppy-disk::before { content: "S"; }
+.fa-circle::before { content: "o"; }
+.fa-user::before { content: "U"; }
+.fa-phone::before { content: "P"; }
+.fa-envelope::before { content: "E"; }
+.fa-lock::before { content: "L"; }
+.fa-eye::before { content: "V"; }
+.fa-upload::before { content: "^"; }
+.fa-plus::before { content: "+"; }
+.fa-trash::before { content: "-"; }
+.fa-edit::before { content: "E"; }
+.fa-home::before { content: "H"; }
+.fa-heartbeat::before { content: "+"; }

@@ -134,7 +134,7 @@ router.patch(
 
       // Publish to Redis channel for real-time subscription (Socket.IO rooms)
       const channel = `request:tracking:${requestId}`;
-      await redisClient.publish(channel, JSON.stringify({
+      const trackingPayload = JSON.stringify({
         type: 'driver-location-update',
         ambulanceId: ambulanceId.toString(),
         location: locationData.location,
@@ -144,7 +144,11 @@ router.patch(
         heading,
         accuracy,
         timestamp: Date.now(),
-      }));
+      });
+      await Promise.all([
+        redisClient.publish(channel, trackingPayload),
+        redisClient.publish(`driver:location:${ambulanceId}`, trackingPayload),
+      ]);
 
       // Emit Socket.IO event if clients in hospital room
       io.to(`hospital:tracking:${request.assignedHospital}`).emit('driver-location', {
@@ -213,7 +217,7 @@ router.get(
       })
         .select(
           '_id status assignmentState userId userName userPhone location ' +
-          'priority description type vitals assignedHospital acceptedTime enRouteTime'
+          'priority description type assignedHospital acceptedTime enRouteTime +encryptedClinicalData'
         )
         .populate('assignedHospital', 'hospitalName address location phone');
 
@@ -246,6 +250,7 @@ router.get(
           )
         : null;
 
+      const clinicalData = request.getDecryptedClinicalData();
       res.json({
         assignment: {
           requestId: request._id,
@@ -256,7 +261,7 @@ router.get(
           priority: request.priority,
           type: request.type,
           description: request.description,
-          vitals: request.vitals,
+          vitals: clinicalData?.vitals || null,
           patientLocation: {
             lat: patientLat,
             lon: patientLon,

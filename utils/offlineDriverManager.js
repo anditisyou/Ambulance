@@ -103,7 +103,7 @@ class OfflineDriverManager {
   async _handleOfflineWarning(ambulanceId, driverId) {
     try {
       const ambulance = await Ambulance.findById(ambulanceId);
-      if (!ambulance || ambulance.status !== AMBULANCE_STATUS.EN_ROUTE) return;
+      if (!ambulance || ![AMBULANCE_STATUS.BUSY, AMBULANCE_STATUS.EN_ROUTE].includes(ambulance.status)) return;
 
       logger.warn(`Driver ${driverId} offline warning for ambulance ${ambulanceId}`);
 
@@ -244,7 +244,7 @@ class OfflineDriverManager {
           // Restore ambulance status
           const ambulance = await Ambulance.findByIdAndUpdate(
             ambulanceId,
-            { status: AMBULANCE_STATUS.EN_ROUTE },
+            { status: AMBULANCE_STATUS.BUSY },
             { new: true }
           );
 

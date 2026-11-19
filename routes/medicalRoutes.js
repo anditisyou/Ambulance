@@ -28,13 +28,14 @@ router.use(protect);
 router.post('/upload', upload.single('file'), ctrl.uploadMedicalRecord);
 
 // View routes
+router.get('/record/:id/view', authorize(ROLES.HOSPITAL, ROLES.CITIZEN), ctrl.viewMedicalRecordFile);
 router.get('/record/:id', authorize(ROLES.HOSPITAL, ROLES.CITIZEN), ctrl.getMedicalRecord);
 router.get('/user/:userId', authorize(ROLES.HOSPITAL, ROLES.CITIZEN), ctrl.getMedicalRecords);
 
 // Delete route
-router.delete('/record/:id', ctrl.deleteMedicalRecord);
+router.delete('/record/:id', authorize(ROLES.CITIZEN), ctrl.deleteMedicalRecord);
 
 // Share route
-router.post('/share/:recordId', ctrl.shareMedicalRecord);
+router.post('/share/:recordId', authorize(ROLES.CITIZEN), ctrl.shareMedicalRecord);
 
 module.exports = router;

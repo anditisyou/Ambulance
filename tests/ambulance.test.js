@@ -16,7 +16,12 @@ jest.mock('../models/Ambulance', () => ({
   countDocuments:    jest.fn(),
 }));
 
+jest.mock('../models/EmergencyRequest', () => ({
+  exists: jest.fn(),
+}));
+
 const Ambulance      = require('../models/Ambulance');
+const EmergencyRequest = require('../models/EmergencyRequest');
 const ambulanceCtrl  = require('../controllers/ambulanceController');
 const {
   AMBULANCE_STATUS,
@@ -40,7 +45,7 @@ beforeEach(() => jest.clearAllMocks());
 
 describe('AMBULANCE_TRANSITIONS — complete transition table', () => {
   const validTransitions = [
-    [AMBULANCE_STATUS.AVAILABLE,   AMBULANCE_STATUS.ASSIGNED],
+    [AMBULANCE_STATUS.AVAILABLE,   AMBULANCE_STATUS.BUSY],
     [AMBULANCE_STATUS.AVAILABLE,   AMBULANCE_STATUS.MAINTENANCE],
     [AMBULANCE_STATUS.ASSIGNED,    AMBULANCE_STATUS.ENROUTE],
     [AMBULANCE_STATUS.ASSIGNED,    AMBULANCE_STATUS.AVAILABLE],
@@ -51,7 +56,7 @@ describe('AMBULANCE_TRANSITIONS — complete transition table', () => {
   ];
 
   const invalidTransitions = [
-    [AMBULANCE_STATUS.AVAILABLE,   AMBULANCE_STATUS.BUSY],
+    [AMBULANCE_STATUS.AVAILABLE,   AMBULANCE_STATUS.ASSIGNED],
     [AMBULANCE_STATUS.AVAILABLE,   AMBULANCE_STATUS.ENROUTE],
     [AMBULANCE_STATUS.BUSY,        AMBULANCE_STATUS.ASSIGNED],
     [AMBULANCE_STATUS.BUSY,        AMBULANCE_STATUS.ENROUTE],
@@ -91,7 +96,7 @@ describe('ambulanceController.updateStatus', () => {
     Ambulance.findById.mockResolvedValue(mockAmb('AVAILABLE', 'driver_1'));
     const req = {
       params: { id: 'amb_1' },
-      body:   { status: 'ASSIGNED' },
+      body:   { status: 'BUSY' },
       user:   { _id: 'driver_1', role: 'DRIVER' },
       app:    { get: jest.fn().mockReturnValue(null) },
     };
@@ -105,7 +110,7 @@ describe('ambulanceController.updateStatus', () => {
     Ambulance.findById.mockResolvedValue(mockAmb('AVAILABLE', 'driver_1'));
     const req = {
       params: { id: 'amb_1' },
-      body:   { status: 'BUSY' },
+      body:   { status: 'ASSIGNED' },
       user:   { _id: 'driver_1', role: 'DRIVER' },
       app:    { get: jest.fn().mockReturnValue(null) },
     };
@@ -115,6 +120,22 @@ describe('ambulanceController.updateStatus', () => {
     expect(next).toHaveBeenCalledWith(
       expect.objectContaining({ statusCode: 400 })
     );
+  });
+
+  it('does not let a driver release a BUSY ambulance with an active emergency', async () => {
+    Ambulance.findById.mockResolvedValue(mockAmb('BUSY', 'driver_1'));
+    EmergencyRequest.exists.mockResolvedValue({ _id: 'request_1' });
+    const req = {
+      params: { id: 'amb_1' },
+      body: { status: 'AVAILABLE' },
+      user: { _id: 'driver_1', role: 'DRIVER' },
+      app: { get: jest.fn().mockReturnValue(null) },
+    };
+    const next = jest.fn();
+
+    await ambulanceCtrl.updateStatus(req, makeRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
   });
 
   it('rejects update from non-owner driver with 403', async () => {

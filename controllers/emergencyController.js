@@ -5,7 +5,9 @@ const EmergencyRequest  = require('../models/EmergencyRequest');
 const Ambulance         = require('../models/Ambulance');
 const DispatchLog       = require('../models/DispatchLog'); // FIX: was missing — caused ReferenceError
 const User              = require('../models/User');
+const Hospital          = require('../models/Hospital');
 const AppError          = require('../utils/AppError');
+const { syncRequestState } = require('../utils/requestStateMachine');
 const {
   ROLES,
   REQUEST_STATUS,
@@ -85,7 +87,7 @@ exports.getEmergencyRequests = async (req, res, next) => {
     const [requests, total] = await Promise.all([
       EmergencyRequest.find(query)
         .populate('userId', 'name email phone')
-        .populate('assignedAmbulanceId', 'plateNumber driverId')
+        .populate('assignedAmbulanceId', 'plateNumber driverId currentLocation')
         .populate('assignedHospital', 'name')
         .sort(sortBy)
         .skip(skip)
@@ -198,8 +200,37 @@ exports.acceptEmergencyRequest = async (req, res, next) => {
       throw new AppError('This request has already been processed', 400);
     }
 
-    emergencyRequest.status          = REQUEST_STATUS.ASSIGNED; // FIX: was ACCEPTED which doesn't exist in enum
+    const hospital = await Hospital.findOne({ userId: req.user._id }).session(session);
+    if (!hospital) {
+      throw new AppError('Hospital profile not found. Complete hospital setup before accepting requests.', 404);
+    }
+
+    const requestedBedType = req.body.bedType
+      ? String(req.body.bedType).trim().toUpperCase()
+      : null;
+    const bed = requestedBedType
+      ? hospital.beds.find((item) => item.type === requestedBedType)
+      : hospital.beds.find((item) => Number(item.available) > 0);
+
+    if (!bed) {
+      throw new AppError(
+        requestedBedType ? `${requestedBedType} beds are not available` : 'No available beds found for this hospital',
+        400
+      );
+    }
+
+    if (Number(bed.available) <= 0) {
+      throw new AppError(`${bed.type} beds are full`, 400);
+    }
+
+    bed.available -= 1;
+    bed.lastUpdated = new Date();
+    hospital.updateCapacityStatus();
+    await hospital.save({ session });
+
+    syncRequestState(emergencyRequest, REQUEST_STATUS.ASSIGNED);
     emergencyRequest.assignedHospital = req.user._id;
+    emergencyRequest.assignedBedType  = bed.type;
     await emergencyRequest.save({ session });
 
     await session.commitTransaction();
@@ -210,10 +241,19 @@ exports.acceptEmergencyRequest = async (req, res, next) => {
         requestId:    emergencyRequest._id,
         hospitalId:   req.user._id,
         hospitalName: req.user.name,
+        bedType:      bed.type,
       });
       io.to(`user_${emergencyRequest.userId}`).emit('requestAccepted', {
         requestId:    emergencyRequest._id,
         hospitalName: req.user.name,
+        bedType:      bed.type,
+      });
+      io.to('admins').emit('hospitalCapacityUpdate', {
+        hospitalId: hospital._id,
+        userId: hospital.userId,
+        name: hospital.name,
+        capacityStatus: hospital.capacityStatus,
+        beds: hospital.beds,
       });
     }
 
@@ -248,7 +288,7 @@ exports.completeEmergencyRequest = async (req, res, next) => {
       throw new AppError('Not authorised to complete this request', 403);
     }
 
-    emergencyRequest.status         = REQUEST_STATUS.COMPLETED;
+    syncRequestState(emergencyRequest, REQUEST_STATUS.COMPLETED);
     emergencyRequest.completionTime = new Date();
     await emergencyRequest.save({ session });
 
@@ -307,8 +347,12 @@ exports.getRequestHistory = async (req, res, next) => {
 
     const [requests, total] = await Promise.all([
       EmergencyRequest.find({ userId: req.user._id })
-        .populate('assignedAmbulanceId', 'plateNumber')
-        .populate('assignedHospital',    'name')
+        .populate({
+          path: 'assignedAmbulanceId',
+          select: 'plateNumber driverId',
+          populate: { path: 'driverId', select: 'name phone' },
+        })
+        .populate('assignedHospital', 'name phone')
         .sort('-requestTime')
         .skip(skip)
         .limit(limitNum)

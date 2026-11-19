@@ -7,7 +7,9 @@
  */
 
 const redisClient = require('./redisClient');
-const { isRedisAvailable } = require('./redisClient');
+const isRedisAvailable = redisClient && typeof redisClient.isRedisAvailable === 'function'
+  ? redisClient.isRedisAvailable
+  : () => false;
 
 class RateLimiter {
   constructor() {

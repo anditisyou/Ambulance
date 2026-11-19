@@ -1,6 +1,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
+const { encrypt, decrypt } = require('../utils/encryption');
 
 /**
  * MedicalRecord schema - COMPLETE FIXED VERSION
@@ -60,7 +61,10 @@ const medicalRecordSchema = new mongoose.Schema(
       type: String,
     },
 
-    data: mongoose.Schema.Types.Mixed,
+    // Free-form clinical content is not used as a query predicate. Keep it
+    // encrypted at rest and only decrypt it in an authorised application path.
+    data: { type: mongoose.Schema.Types.Mixed, select: false },
+    encryptedData: { type: mongoose.Schema.Types.Mixed, select: false },
 
     sharedWith: {
       type:    [sharedWithSchema],
@@ -74,5 +78,17 @@ const medicalRecordSchema = new mongoose.Schema(
 );
 
 medicalRecordSchema.index({ userId: 1, createdAt: -1 });
+
+medicalRecordSchema.pre('validate', function encryptRecordData(next) {
+  if (this.isModified('data') && this.data != null) {
+    this.encryptedData = encrypt(this.data);
+    this.data = undefined;
+  }
+  next();
+});
+
+medicalRecordSchema.methods.getDecryptedData = function getDecryptedData() {
+  return this.encryptedData ? decrypt(this.encryptedData, true) : null;
+};
 
 module.exports = mongoose.model('MedicalRecord', medicalRecordSchema);

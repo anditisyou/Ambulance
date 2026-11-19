@@ -1,7 +1,9 @@
 // jai jaaganath
 'use strict';
 
-require('dotenv').config();
+if (process.env.NODE_ENV !== 'test') {
+  require('dotenv').config();
+}
 const { expressApp, server, waitForMongoConnection } = require('./server');
 
 const PORT = process.env.PORT || 3000;

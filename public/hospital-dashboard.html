@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hospital Dashboard - Emergency Response System</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="/vendor/bootstrap-lite.css" rel="stylesheet">
+    <link rel="stylesheet" href="/vendor/fontawesome-lite.css">
     <link rel="stylesheet" href="./css/style.css">
     <link rel="stylesheet" href="./css/dashboard-theme.css">
     <style>
@@ -20,12 +20,90 @@
 
         body {
             min-height: 100vh;
+            overflow-x: hidden;
         }
 
         .hospital-shell {
+            position: relative;
             max-width: 1360px;
             margin: 0 auto;
             padding: 16px 16px 28px;
+            z-index: 1;
+        }
+
+        .hospital-shell::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background:
+                linear-gradient(115deg, rgba(15, 118, 110, 0.06), transparent 38%),
+                linear-gradient(250deg, rgba(255, 255, 255, 0.72), transparent 52%);
+            z-index: -2;
+        }
+
+        .medical-orbit {
+            position: fixed;
+            right: clamp(-130px, -8vw, -70px);
+            top: 92px;
+            width: clamp(250px, 30vw, 430px);
+            aspect-ratio: 1;
+            pointer-events: none;
+            perspective: 900px;
+            z-index: -1;
+            opacity: 0.78;
+        }
+
+        .medical-orbit::before,
+        .medical-orbit::after {
+            content: '';
+            position: absolute;
+            inset: 12%;
+            border: 1px solid rgba(15, 118, 110, 0.34);
+            border-radius: 22px;
+            transform: rotateX(58deg) rotateZ(-28deg);
+            box-shadow: 0 26px 70px rgba(15, 118, 110, 0.18);
+        }
+
+        .medical-orbit::after {
+            inset: 27%;
+            border-color: rgba(220, 53, 69, 0.26);
+            transform: rotateX(58deg) rotateZ(22deg) translateZ(36px);
+            background: linear-gradient(135deg, rgba(255,255,255,0.72), rgba(204,251,241,0.18));
+        }
+
+        .medical-orbit span {
+            position: absolute;
+            width: 74px;
+            height: 74px;
+            right: 37%;
+            top: 36%;
+            border-radius: 18px;
+            background: linear-gradient(145deg, #ffffff, #d9fff7);
+            border: 1px solid rgba(15, 118, 110, 0.28);
+            box-shadow: 0 22px 42px rgba(17, 32, 51, 0.14);
+            transform: rotateX(58deg) rotateZ(-18deg) translateZ(68px);
+        }
+
+        .medical-orbit span::before,
+        .medical-orbit span::after {
+            content: '';
+            position: absolute;
+            background: var(--hospital-danger);
+            border-radius: 999px;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .medical-orbit span::before {
+            width: 12px;
+            height: 42px;
+        }
+
+        .medical-orbit span::after {
+            width: 42px;
+            height: 12px;
         }
 
         .hospital-nav {
@@ -77,12 +155,61 @@
             font-weight: 700;
         }
 
+        .availability-toggle {
+            border: none;
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .availability-toggle.available {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: #fff;
+        }
+
+        .availability-toggle.available:hover {
+            background: linear-gradient(135deg, #059669, #047857);
+        }
+
+        .availability-toggle.busy {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: #fff;
+        }
+
+        .availability-toggle.busy:hover {
+            background: linear-gradient(135deg, #d97706, #b45309);
+        }
+
         .hero-card {
             border-radius: 20px;
             padding: 22px;
             margin-bottom: 18px;
             background: linear-gradient(120deg, rgba(15, 118, 110, 0.16), rgba(16, 185, 129, 0.1));
             border: 1px solid #c9ede5;
+            position: relative;
+            overflow: hidden;
+            transform-style: preserve-3d;
+            box-shadow: 0 18px 44px rgba(17, 32, 51, 0.1);
+        }
+
+        .hero-card::after {
+            content: '';
+            position: absolute;
+            width: 160px;
+            height: 160px;
+            right: 24px;
+            top: 50%;
+            transform: translateY(-50%) rotateX(62deg) rotateZ(45deg);
+            border-radius: 18px;
+            border: 1px solid rgba(15, 118, 110, 0.28);
+            background:
+                linear-gradient(90deg, rgba(15,118,110,0.18) 1px, transparent 1px),
+                linear-gradient(rgba(15,118,110,0.18) 1px, transparent 1px),
+                rgba(255,255,255,0.32);
+            background-size: 26px 26px;
+            box-shadow: 0 24px 50px rgba(15, 118, 110, 0.16);
         }
 
         .hero-title {
@@ -110,6 +237,13 @@
             background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(255,255,255,0.88));
             border: 1px solid #d4e8f6;
             box-shadow: 0 8px 18px rgba(17, 32, 51, 0.08);
+            transform: translateZ(0);
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .stat-box:hover {
+            transform: translateY(-4px) rotateX(1deg);
+            box-shadow: 0 16px 32px rgba(17, 32, 51, 0.12);
         }
 
         .stat-label {
@@ -149,6 +283,13 @@
         .request-panel {
             border-radius: 20px;
             padding: 20px;
+        }
+
+        .hospital-empty {
+            min-height: 112px;
+            display: grid;
+            place-items: center;
+            color: var(--hospital-muted);
         }
 
         .panel-head {
@@ -199,6 +340,107 @@
             color: var(--hospital-ink);
         }
 
+        .tracking-panel {
+            margin-top: 20px;
+        }
+
+        .tracking-stats {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .tracking-stat {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 12px;
+            flex: 1;
+            min-width: 120px;
+            text-align: center;
+        }
+
+        .tracking-stat .stat-number {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--hospital-primary);
+        }
+
+        .tracking-stat .stat-label {
+            font-size: 0.85rem;
+            color: var(--hospital-muted);
+            margin-top: 4px;
+        }
+
+        .ambulance-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .ambulance-item {
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            background: #fff;
+            box-shadow: 0 10px 22px rgba(17, 32, 51, 0.06);
+        }
+
+        .ambulance-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .ambulance-call-sign {
+            font-weight: 700;
+            color: var(--hospital-ink);
+        }
+
+        .ambulance-priority {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .priority-critical { background: #fee2e2; color: #dc3545; }
+        .priority-high { background: #fff3cd; color: #d28716; }
+        .priority-medium { background: #d1ecf1; color: #0c5460; }
+        .priority-low { background: #d4edda; color: #155724; }
+
+        .ambulance-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .detail-item {
+            font-size: 0.9rem;
+        }
+
+        .detail-label {
+            font-weight: 600;
+            color: var(--hospital-muted);
+        }
+
+        .prepare-bed-btn {
+            background: var(--hospital-primary);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+
+        .prepare-bed-btn:hover {
+            background: #13948a;
+        }
+
         @media (max-width: 992px) {
             .stat-row {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -206,6 +448,11 @@
         }
 
         @media (max-width: 640px) {
+            .medical-orbit,
+            .hero-card::after {
+                display: none;
+            }
+
             .hospital-shell {
                 padding: 10px 10px 20px;
             }
@@ -216,7 +463,20 @@
             }
 
             .hospital-actions {
-                justify-content: space-between;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                align-items: stretch;
+            }
+
+            .hospital-name-pill,
+            #logoutBtn {
+                grid-column: 1 / -1;
+            }
+
+            .hospital-actions > * {
+                width: 100%;
+                justify-content: center;
+                text-align: center;
             }
 
             .hero-title {
@@ -226,10 +486,15 @@
             .stat-row {
                 grid-template-columns: 1fr;
             }
+
+            .ambulance-details {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 <body>
+    <div class="medical-orbit" aria-hidden="true"><span></span></div>
     <main class="hospital-shell">
         <nav class="hospital-nav navbar">
             <a href="/" class="brand">
@@ -238,7 +503,10 @@
             </a>
             <div class="hospital-actions">
                 <span id="hospitalName" class="hospital-name-pill">Loading hospital...</span>
-                <button type="button" class="btn-hospital" onclick="refreshRequests()">
+                <button id="availabilityBtn" type="button" class="availability-toggle available" data-action="toggleAvailability">
+                    <i class="fas fa-circle me-2"></i>Available
+                </button>
+                <button type="button" class="btn-hospital" data-action="refreshRequests">
                     <i class="fas fa-rotate me-1"></i>
                     Refresh
                 </button>
@@ -274,7 +542,7 @@
                 <div class="stat-label">Bed Capacity</div>
                 <div class="capacity-tag" id="hospitalCapacityStatus">Loading...</div>
                 <div class="mt-2">
-                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="showBedUpdateModal()">
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-action="showBedUpdateModal">
                         <i class="fas fa-bed-pulse me-1"></i>
                         Update Capacity
                     </button>
@@ -289,11 +557,11 @@
                     Emergency Requests Queue
                 </h3>
                 <div class="panel-controls">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="viewStatistics()">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-action="viewStatistics">
                         <i class="fas fa-chart-line me-1"></i>
                         Statistics
                     </button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="exportData()">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-action="exportData">
                         <i class="fas fa-file-arrow-down me-1"></i>
                         Export
                     </button>
@@ -324,6 +592,29 @@
                 </table>
             </div>
         </section>
+
+        <section class="tracking-panel card">
+            <div class="panel-head">
+                <h3>
+                    <i class="fas fa-truck-medical text-primary me-2"></i>
+                    Incoming Ambulances
+                </h3>
+                <div class="panel-controls">
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-action="refreshTracking">
+                        <i class="fas fa-sync me-1"></i>
+                        Refresh
+                    </button>
+                </div>
+            </div>
+            <div class="tracking-content">
+                <div id="trackingStats" class="tracking-stats mb-3">
+                    <!-- Stats will be populated by JS -->
+                </div>
+                <div id="incomingAmbulances" class="ambulance-list">
+                    <!-- Ambulance list will be populated by JS -->
+                </div>
+            </div>
+        </section>
     </main>
 
     <div class="modal fade" id="medicalHistoryModal" tabindex="-1" aria-hidden="true" inert>
@@ -343,6 +634,73 @@
         </div>
     </div>
 
+    <div class="modal fade" id="hospitalProfileModal" tabindex="-1" aria-hidden="true" inert>
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-hospital me-2 text-primary"></i>
+                        Complete Hospital Profile
+                    </h5>
+                </div>
+                <div class="modal-body">
+                    <form id="hospitalProfileForm" data-action="submitHospitalProfile">
+                        <div class="row gx-3">
+                            <div class="col-md-6 mb-3">
+                                <label for="profileHospitalName" class="form-label">Hospital name</label>
+                                <input type="text" class="form-control" id="profileHospitalName" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="profileHospitalPhone" class="form-label">Phone</label>
+                                <input type="tel" class="form-control" id="profileHospitalPhone" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="profileHospitalEmail" class="form-label">Email</label>
+                                <input type="email" class="form-control" id="profileHospitalEmail" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="profileSpecialties" class="form-label">Specialties</label>
+                                <input type="text" class="form-control" id="profileSpecialties" placeholder="Emergency, Trauma, Cardiac">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="profileStreet" class="form-label">Street</label>
+                                <input type="text" class="form-control" id="profileStreet">
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label for="profileCity" class="form-label">City</label>
+                                <input type="text" class="form-control" id="profileCity">
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label for="profileState" class="form-label">State</label>
+                                <input type="text" class="form-control" id="profileState">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="profileZip" class="form-label">Zip code</label>
+                                <input type="text" class="form-control" id="profileZip">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="profileLatitude" class="form-label">Latitude</label>
+                                <input type="number" step="any" class="form-control" id="profileLatitude" required>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="profileLongitude" class="form-label">Longitude</label>
+                                <input type="number" step="any" class="form-control" id="profileLongitude" required>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary mb-3" data-action="useCurrentLocationForProfile">
+                            <i class="fas fa-location-crosshairs me-1"></i>
+                            Use Current Location
+                        </button>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-floppy-disk me-2"></i>
+                            Save Hospital Profile
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade" id="bedUpdateModal" tabindex="-1" aria-hidden="true" inert>
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -354,8 +712,34 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="bedUpdateForm" onsubmit="submitBedUpdate(event)">
+                    <form id="bedUpdateForm" data-action="submitBedUpdate">
                         <div id="bedFieldsContainer"></div>
+                        <div class="mt-3">
+                            <label for="newBedType" class="form-label">Add bed category</label>
+                            <div class="row gx-2">
+                                <div class="col-6 mb-3">
+                                    <select class="form-select" id="newBedType">
+                                        <option value="ICU">ICU</option>
+                                        <option value="EMERGENCY">Emergency</option>
+                                        <option value="GENERAL">General</option>
+                                        <option value="PEDIATRIC">Pediatric</option>
+                                        <option value="BURN">Burn</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 mb-3">
+                                    <input type="number" class="form-control" id="newBedTotal" min="0" placeholder="Total">
+                                </div>
+                                <div class="col-6 mb-3">
+                                    <input type="number" class="form-control" id="newBedAvailable" min="0" placeholder="Available">
+                                </div>
+                                <div class="col-6 mb-3">
+                                    <button type="button" class="btn btn-outline-primary w-100" data-action="addBedCategory">
+                                        <i class="fas fa-plus me-1"></i>
+                                        Add Beds
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                         <div class="mt-3">
                             <button type="submit" class="btn btn-primary w-100">
                                 <i class="fas fa-floppy-disk me-2"></i>
@@ -368,8 +752,8 @@
         </div>
     </div>
 
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/vendor/bootstrap-lite.js"></script>
+    <script src="/vendor/jquery-lite.js"></script>
     <script src="/js/apiClient.js"></script>
     <script src="/js/auth.js"></script>
     <script src="/socket.io/socket.io.js"></script>

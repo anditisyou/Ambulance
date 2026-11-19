@@ -557,7 +557,7 @@ describe('Error handling', () => {
       .get('/api/emergency/not-a-valid-id')
       .set(authHeader(token));
     // CastError should be translated to 400 by globalErrorHandler
-    expect([400, 500]).toContain(res.status);
+    expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
   });
 });

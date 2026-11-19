@@ -6,7 +6,18 @@
 const { parentPort, workerData } = require('worker_threads');
 const axios = require('axios');
 
-const { workerId, baseUrl, userTokens, duration, endTime } = workerData;
+const { workerId, baseUrl, userTokens, duration, endTime, seed = 1 } = workerData;
+
+const random = (() => {
+  let state = seed >>> 0;
+  return () => {
+    state += 0x6D2B79F5;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+})();
 
 class LoadTestWorker {
   constructor() {
@@ -20,6 +31,10 @@ class LoadTestWorker {
     };
 
     this.sessionTokens = new Map(); // userId -> token
+  }
+
+  log(message) {
+    parentPort.postMessage({ type: 'log', workerId, message });
   }
 
   recordRequest(responseTime, success = true, error = null) {
@@ -68,7 +83,7 @@ class LoadTestWorker {
 
   getRandomToken() {
     if (userTokens.length === 0) return null;
-    return userTokens[Math.floor(Math.random() * userTokens.length)];
+    return userTokens[Math.floor(random() * userTokens.length)];
   }
 
   async simulateUserJourney() {
@@ -77,41 +92,41 @@ class LoadTestWorker {
 
     try {
       // 1. Get user profile (simulate dashboard load)
-      await this.makeRequest('GET', `${baseUrl}/auth/profile`, null, token);
+      await this.makeRequest('GET', `${baseUrl}/auth/me`, null, token);
 
       // 2. 30% chance to create emergency request
-      if (Math.random() < 0.3) {
+      if (random() < 0.3) {
         const emergencyData = {
           location: {
             type: 'Point',
             coordinates: [
-              -118.2437 + (Math.random() - 0.5) * 0.1, // Random LA coordinates
-              34.0522 + (Math.random() - 0.5) * 0.1
+              -118.2437 + (random() - 0.5) * 0.1, // Random LA coordinates
+              34.0522 + (random() - 0.5) * 0.1
             ]
           },
-          priority: Math.random() > 0.7 ? 'HIGH' : 'MEDIUM',
+          priority: random() > 0.7 ? 'HIGH' : 'MEDIUM',
           description: 'Load test emergency request',
           phone: '+1234567890',
           medicalInfo: 'Simulated medical emergency for load testing'
         };
 
-        const response = await this.makeRequest('POST', `${baseUrl}/emergency`, emergencyData, token);
+        const response = await this.makeRequest('POST', `${baseUrl}/dispatch/request`, {
+          latitude: emergencyData.location.coordinates[1],
+          longitude: emergencyData.location.coordinates[0],
+          priority: emergencyData.priority,
+          description: emergencyData.description,
+        }, token);
         if (response.success) {
           this.stats.emergenciesCreated++;
         }
       }
 
       // 3. 20% chance to check emergency status
-      if (Math.random() < 0.2) {
-        await this.makeRequest('GET', `${baseUrl}/emergency`, null, token);
+      if (random() < 0.2) {
+        await this.makeRequest('GET', `${baseUrl}/dispatch/active`, null, token);
       }
 
-      // 4. 10% chance to access analytics (admin/hospital users)
-      if (Math.random() < 0.1) {
-        await this.makeRequest('GET', `${baseUrl}/analytics/dashboard`, null, token);
-      }
-
-      // 5. Always check health endpoint
+      // 4. Always check health endpoint
       await this.makeRequest('GET', `${baseUrl.replace('/api', '')}/health`);
 
     } catch (error) {
@@ -145,23 +160,17 @@ class LoadTestWorker {
 
     while (Date.now() < endTime) {
       // Emergency spike simulation: 5% chance to create multiple emergencies simultaneously
-      if (Math.random() < 0.05) {
+      if (random() < 0.05) {
         await this.simulateEmergencySpike();
       } else {
         // Simulate different user types
-        const userType = Math.random();
+        const userType = random();
 
-        if (userType < 0.7) {
-          // 70% regular users
-          await this.simulateUserJourney();
-        } else {
-          // 30% hospital users
-          await this.simulateHospitalJourney();
-        }
+        await this.simulateUserJourney();
       }
 
       // Random delay between 100ms - 2s to simulate realistic user behavior
-      const delay = 100 + Math.random() * 1900;
+      const delay = 100 + random() * 1900;
       await new Promise(resolve => setTimeout(resolve, delay));
     }
 
@@ -178,7 +187,7 @@ class LoadTestWorker {
 
   async simulateEmergencySpike() {
     // Simulate 3-8 simultaneous emergencies (like a multi-car accident)
-    const spikeCount = 3 + Math.floor(Math.random() * 6);
+    const spikeCount = 3 + Math.floor(random() * 6);
 
     this.log(`🚨 Emergency spike: ${spikeCount} simultaneous emergencies`);
 
@@ -196,24 +205,29 @@ class LoadTestWorker {
 
     try {
       // Create emergency in a concentrated geographic area (simulating incident location)
-      const baseLat = 34.0522 + (Math.random() - 0.5) * 0.01; // Small geographic cluster
-      const baseLng = -118.2437 + (Math.random() - 0.5) * 0.01;
+      const baseLat = 34.0522 + (random() - 0.5) * 0.01; // Small geographic cluster
+      const baseLng = -118.2437 + (random() - 0.5) * 0.01;
 
       const emergencyData = {
         location: {
           type: 'Point',
           coordinates: [
-            baseLng + (Math.random() - 0.5) * 0.002, // Within 200m of incident
-            baseLat + (Math.random() - 0.5) * 0.002
+            baseLng + (random() - 0.5) * 0.002, // Within 200m of incident
+            baseLat + (random() - 0.5) * 0.002
           ]
         },
-        priority: Math.random() > 0.5 ? 'CRITICAL' : 'HIGH', // Higher priority for spikes
+        priority: random() > 0.5 ? 'CRITICAL' : 'HIGH', // Higher priority for spikes
         description: 'Emergency spike - simulated incident',
         phone: '+1234567890',
         medicalInfo: 'Multiple casualty incident - load test simulation'
       };
 
-      const response = await this.makeRequest('POST', `${baseUrl}/emergency`, emergencyData, token);
+      const response = await this.makeRequest('POST', `${baseUrl}/dispatch/request`, {
+        latitude: emergencyData.location.coordinates[1],
+        longitude: emergencyData.location.coordinates[0],
+        priority: emergencyData.priority,
+        description: emergencyData.description,
+      }, token);
       if (response.success) {
         this.stats.emergenciesCreated++;
       }

@@ -4,9 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ambulance Dashboard - Emergency Response System</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="/vendor/bootstrap-lite.css" rel="stylesheet">
+    <link rel="stylesheet" href="/vendor/fontawesome-lite.css">
     <link rel="stylesheet" href="./css/style.css">
     <style>
         :root {
@@ -449,7 +448,7 @@
             </a>
             
             <div class="hospital-info">
-                <button class="logout-btn" onclick="logout()">
+                <button class="logout-btn" data-action="logout">
                     <i class="fas fa-sign-out-alt"></i>
                 </button>
             </div>
@@ -467,9 +466,9 @@
         </div>
         <div class="col-md-6 text-end">
             <span class="badge bg-info me-2" id="ambulanceStatus">Status: Loading...</span>
-            <button class="btn btn-sm btn-primary me-2" onclick="toggleStatus()" id="statusToggle">Toggle Status</button>
-            <button class="btn btn-sm btn-outline-primary me-2" onclick="showAmbulanceRegistrationModal()" id="registerAmbulanceBtn" style="display: none;">Register Ambulance</button>
-            <button class="btn btn-sm btn-success" onclick="updateLocation()" id="updateLocationBtn">
+            <button class="btn btn-sm btn-primary me-2" data-action="toggleStatus" id="statusToggle">Toggle Status</button>
+            <button class="btn btn-sm btn-outline-primary me-2" data-action="showAmbulanceRegistrationModal" id="registerAmbulanceBtn" style="display: none;">Register Ambulance</button>
+            <button class="btn btn-sm btn-success" data-action="updateLocation" id="updateLocationBtn">
                 <i class="fas fa-location-dot me-1"></i>Update Location
             </button>
         </div>
@@ -516,17 +515,21 @@
 
         <!-- Quick Actions -->
         <div class="quick-actions">
-            <button class="quick-action-btn" onclick="refreshRequests()">
+            <button class="quick-action-btn" data-action="refreshRequests">
                 <i class="fas fa-sync-alt"></i>
                 Refresh
             </button>
-            <button class="quick-action-btn" onclick="exportData()">
+            <button class="quick-action-btn" data-action="exportData">
                 <i class="fas fa-download"></i>
                 Export Report
             </button>
-            <button class="quick-action-btn" onclick="viewStatistics()">
+            <button class="quick-action-btn" data-action="viewStatistics">
                 <i class="fas fa-chart-bar"></i>
                 Statistics
+            </button>
+            <button class="quick-action-btn" data-action="findNearestHospital">
+                <i class="fas fa-hospital"></i>
+                Nearest Hospital
             </button>
         </div>
 
@@ -609,7 +612,7 @@
                     <h5 class="modal-title">Register Ambulance</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <form id="ambulanceRegistrationForm" onsubmit="registerAmbulance(event)">
+                <form id="ambulanceRegistrationForm" data-action="registerAmbulance">
                     <div class="modal-body">
                         <div class="mb-3">
                             <label for="plateNumber" class="form-label">Plate Number</label>
@@ -659,11 +662,27 @@
     </div>
 </div>
 
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <!-- Nearest Hospital Modal -->
+<div class="modal fade" id="nearestHospitalModal" tabindex="-1" aria-hidden="true" inert>
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Nearest Hospital With Beds</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="nearestHospitalBody">
+                <!-- Nearest hospital details will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+    <script src="/vendor/bootstrap-lite.js"></script>
+    <script src="/vendor/jquery-lite.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
     <script src="/js/apiClient.js"></script>
     <script src="/js/auth.js"></script>
     <script src="/js/ambulance-dashboard.js"></script>
+    <script src="/js/bindings.js"></script>
 </body>
 </html>

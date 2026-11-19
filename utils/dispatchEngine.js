@@ -24,6 +24,7 @@ const logger            = require('../utils/logger');
 const { haversineDistance } = require('../utils/haversine');
 const { getETA } = require('./etaCalculator');
 const { AMBULANCE_STATUS, REQUEST_STATUS, REQUEST_PRIORITY, SLA_TARGET_SECONDS, SLA_STATUS } = require('./constants');
+const { syncRequestState } = require('./requestStateMachine');
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -244,7 +245,7 @@ const findNearest = async (location, priority, excludeIds, session, useTransacti
 
       const updated = await Ambulance.findOneAndUpdate(
         { _id: best._id, status: AMBULANCE_STATUS.AVAILABLE },
-        { status: AMBULANCE_STATUS.ASSIGNED },
+        { status: AMBULANCE_STATUS.BUSY },
         updateOptions
       ).populate('driverId', 'name phone');
 
@@ -292,7 +293,7 @@ const findNearest = async (location, priority, excludeIds, session, useTransacti
 
       const updated = await Ambulance.findOneAndUpdate(
         { _id: best._id, status: AMBULANCE_STATUS.AVAILABLE },
-        { status: AMBULANCE_STATUS.ASSIGNED },
+        { status: AMBULANCE_STATUS.BUSY },
         updateOptions
       ).populate('driverId', 'name phone');
 
@@ -314,7 +315,7 @@ const findNearest = async (location, priority, excludeIds, session, useTransacti
 
   const updated = await Ambulance.findOneAndUpdate(
     { _id: best._id, status: AMBULANCE_STATUS.AVAILABLE },
-    { status: AMBULANCE_STATUS.ASSIGNED },
+    { status: AMBULANCE_STATUS.BUSY },
     updateOptions
   ).populate('driverId', 'name phone');
 
@@ -329,7 +330,7 @@ const findNearest = async (location, priority, excludeIds, session, useTransacti
 
     const updatedNext = await Ambulance.findOneAndUpdate(
       { _id: next._id, status: AMBULANCE_STATUS.AVAILABLE },
-      { status: AMBULANCE_STATUS.ASSIGNED },
+      { status: AMBULANCE_STATUS.BUSY },
       updateOptions
     ).populate('driverId', 'name phone');
 
@@ -340,7 +341,7 @@ const findNearest = async (location, priority, excludeIds, session, useTransacti
 };
 
 /**
- * Write the allocation: mark ambulance ASSIGNED, update request, create/update DispatchLog.
+ * Write the allocation: mark ambulance BUSY, update request, create/update DispatchLog.
  *
  * @param {import('mongoose').Document} request
  * @param {import('mongoose').Document} ambulance
@@ -350,7 +351,7 @@ const writeAllocation = async (request, ambulance, session, useTransaction = tru
   // Ambulance is already assigned atomically in findNearest
 
   // 2. Update the request
-  request.status              = REQUEST_STATUS.ASSIGNED;
+  syncRequestState(request, REQUEST_STATUS.ASSIGNED);
   request.assignedAmbulanceId = ambulance._id;
   request.allocationTime      = new Date();
 
@@ -409,6 +410,7 @@ const allocateAmbulance = async (request, session, useTransaction = true, hospit
     request.priority,
     [],
     session,
+    useTransaction,
     hospital
   );
 
@@ -454,7 +456,7 @@ const handleRejection = async (request, session, useTransaction = true) => {
 
   // Reset request to PENDING while we search
   const prevAmbulanceId       = request.assignedAmbulanceId;
-  request.status              = REQUEST_STATUS.PENDING;
+  syncRequestState(request, REQUEST_STATUS.PENDING);
   request.assignedAmbulanceId = undefined;
 
   const saveOptions = {};
@@ -502,7 +504,6 @@ const handleRejection = async (request, session, useTransaction = true) => {
     request.priority,
     previousAmbulanceIds.map(String),
     session,
-    null,
     useTransaction
   );
 
@@ -542,4 +543,4 @@ const allocateQueuedRequest = async (sessionData) => {
   return { request, ambulance };
 };
 
-module.exports = { allocateAmbulance, handleRejection, allocateQueuedRequest };
+module.exports = { allocateAmbulance, handleRejection, allocateQueuedRequest, writeAllocation };

@@ -8,8 +8,13 @@ const DispatchLog      = require('../models/DispatchLog');
 const AppError         = require('../utils/AppError');
 const logger           = require('../utils/logger');
 const { haversineDistance } = require('../utils/haversine');
-const redisClient = require('../utils/redisClient');
+const redisModule = require('../utils/redisClient');
+const redisClient = redisModule && typeof redisModule === 'object' ? redisModule : null;
+const isRedisAvailable = redisModule && typeof redisModule.isRedisAvailable === 'function'
+  ? redisModule.isRedisAvailable
+  : () => false;
 const { allocateQueuedRequest, handleRejection } = require('../utils/dispatchEngine');
+const { syncRequestState } = require('../utils/requestStateMachine');
 const CircuitBreaker = require('../utils/circuitBreaker');
 const LoadShedder = require('../utils/loadShedder');
 const cache = require('../utils/cache');
@@ -39,6 +44,15 @@ let realtimeMonitorModule = null;
 let anomalyDetectorModule = null;
 const shouldUseDispatchQueue =
   process.env.NODE_ENV !== 'test' || process.env.ENABLE_DISPATCH_QUEUE_IN_TESTS === 'true';
+const DISPATCH_QUEUE_TIMEOUT_MS = Number(process.env.DISPATCH_QUEUE_TIMEOUT_MS) || 4000;
+
+const stripHtml = (value) => {
+  if (value == null) return '';
+  if (typeof value !== 'string') {
+    throw new AppError('Validation error: description and text fields must be strings', 400);
+  }
+  return value.replace(/<[^>]*>/g, '').trim();
+};
 
 const testQueueFallback = {
   addDispatchJob: async () => ({ id: 'test-noop-dispatch-job' }),
@@ -91,6 +105,17 @@ let mongoTransactionsSupported = null;
 const startTransactionSession = async () => {
   let session = null;
   let useTransaction = true;
+
+  if (
+    process.env.DISABLE_MONGO_TRANSACTIONS === 'true' ||
+    (process.env.NODE_ENV === 'test' && process.env.ENABLE_MONGO_TRANSACTIONS_IN_TESTS !== 'true')
+  ) {
+    if (mongoTransactionsSupported !== false) {
+      logger.info('[Mongo] Running WITHOUT transactions');
+      mongoTransactionsSupported = false;
+    }
+    return { session: null, useTransaction: false };
+  }
 
   try {
     session = await mongoose.startSession();
@@ -190,15 +215,24 @@ const fallbackEta = (from, to) => {
 
 const estimateEta = async (from, to) => {
   const cacheKey = `eta:${from.join(',')}:${to.join(',')}`;
-  const cached = redisClient && typeof redisClient.get === 'function'
-    ? await redisClient.get(cacheKey)
-    : null;
+  let cached = null;
+
+  // ETA is useful to display, but a cache outage must never prevent a driver
+  // from receiving their emergency assignment.
+  if (isRedisAvailable() && redisClient && typeof redisClient.get === 'function') {
+    try {
+      cached = await redisClient.get(cacheKey);
+    } catch (err) {
+      logger.warn('ETA cache lookup failed; calculating ETA without cache', { error: err.message });
+    }
+  }
+
   if (cached) return parseInt(cached);
 
   try {
     const route = await getRouteInfo(from, to);
     const eta = route.duration;
-    if (redisClient && typeof redisClient.setex === 'function') {
+    if (isRedisAvailable() && redisClient && typeof redisClient.setex === 'function') {
       await redisClient.setex(cacheKey, 3600, eta.toString()); // Cache for 1 hour
     }
     return eta;
@@ -255,7 +289,7 @@ const processQueuedAssignment = async (io) => {
     sessionData = await startTransactionSession();
     const { session, useTransaction } = sessionData;
 
-    const result = await allocateQueuedRequest(session, useTransaction);
+    const result = await allocateQueuedRequest(sessionData);
 
     if (!result) {
       await abortSession(sessionData);
@@ -326,6 +360,46 @@ const processQueuedAssignment = async (io) => {
   }
 };
 
+const runNonCriticalSideEffect = async (label, task, metadata = {}) => {
+  try {
+    return await task();
+  } catch (err) {
+    logger.warn(`${label} failed; continuing request flow`, {
+      ...metadata,
+      error: err.message,
+    });
+    return null;
+  }
+};
+
+const scheduleNonCriticalSideEffect = (label, task, metadata = {}) => {
+  Promise.resolve()
+    .then(task)
+    .catch((err) => {
+      logger.warn(`${label} failed; continuing request flow`, {
+        ...metadata,
+        error: err.message,
+      });
+    });
+};
+
+const withDispatchQueueTimeout = (task, label) => new Promise((resolve, reject) => {
+  const timeoutId = setTimeout(() => {
+    reject(new Error(`${label} timed out`));
+  }, DISPATCH_QUEUE_TIMEOUT_MS);
+
+  Promise.resolve()
+    .then(task)
+    .then((value) => {
+      clearTimeout(timeoutId);
+      resolve(value);
+    })
+    .catch((error) => {
+      clearTimeout(timeoutId);
+      reject(error);
+    });
+});
+
 // â”€â”€â”€ Internal helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
@@ -355,10 +429,10 @@ const findNearestAmbulance = async (location, session) =>
  * @param {import('mongoose').ClientSession} session
  */
 const assignAmbulance = async (request, ambulance, session) => {
-  ambulance.status = AMBULANCE_STATUS.ASSIGNED;
+  ambulance.status = AMBULANCE_STATUS.BUSY;
   await ambulance.save({ session });
 
-  request.status              = REQUEST_STATUS.ASSIGNED;
+  syncRequestState(request, REQUEST_STATUS.ASSIGNED);
   request.assignedAmbulanceId = ambulance._id;
   request.allocationTime      = new Date();
   await request.save({ session });
@@ -406,6 +480,10 @@ exports.newRequest = async (req, res, next) => {
       vitals,
     } = req.body;
 
+    const normalizedPriority = REQUEST_PRIORITY_VALUES.includes(String(priority || '').toUpperCase())
+      ? String(priority).toUpperCase()
+      : REQUEST_PRIORITY.MEDIUM;
+
     // â”€â”€ Validation first (fast-fail before queue/DB-heavy checks) â”€â”€
     if (latitude == null || longitude == null) {
       throw new AppError('latitude and longitude are required', 400);
@@ -422,10 +500,18 @@ exports.newRequest = async (req, res, next) => {
       throw new AppError('Invalid coordinates', 400);
     }
 
+    const sanitizedDescription = stripHtml(description);
+    const sanitizedAllergies = stripHtml(allergies);
+    const sanitizedTriageNotes = stripHtml(triageNotes);
+    const sanitizedMedicalHistorySummary = stripHtml(medicalHistorySummary);
+
     // â”€â”€ Load shedding: reject low-priority during extreme overload â”€â”€
     let metrics = { waiting: 0, allocations: 0, rejections: 0 };
     try {
-      metrics = await getDispatchQueueModule().getQueueStats();
+      metrics = await withDispatchQueueTimeout(
+        () => getDispatchQueueModule().getQueueStats(),
+        'Dispatch queue metrics'
+      );
     } catch (metricsErr) {
       logger.warn('Unable to read dispatch queue metrics; skipping load shedding', {
         error: metricsErr.message,
@@ -433,7 +519,7 @@ exports.newRequest = async (req, res, next) => {
     }
 
     loadShedder.updateStatus(metrics);
-    if (process.env.NODE_ENV === 'production' && loadShedder.shouldShedRequest(priority)) {
+    if (process.env.NODE_ENV === 'production' && loadShedder.shouldShedRequest(normalizedPriority)) {
       const backoffMs = loadShedder.getBackoffTime();
       return res.status(503).json({
         success: false,
@@ -466,7 +552,7 @@ exports.newRequest = async (req, res, next) => {
     const anomalies = await getAnomalyDetector().detectAnomalies({
       userId: req.user._id,
       location: { latitude: locLat, longitude: locLng },
-      priority,
+      priority: normalizedPriority,
       type,
       vitals,
       requestTime: new Date(),
@@ -512,13 +598,14 @@ exports.newRequest = async (req, res, next) => {
       userName: req.user.name,
       userPhone: req.user.phone,
       location,
-      priority: priority || 'MEDIUM',
+      priority: normalizedPriority,
       status: 'PENDING',
+      assignmentState: 'PENDING',
       type: type || 'MEDICAL',
-      description: description || '',
-      allergies: allergies || '',
-      triageNotes: triageNotes || '',
-      medicalHistorySummary: medicalHistorySummary || '',
+      description: sanitizedDescription,
+      allergies: sanitizedAllergies,
+      triageNotes: sanitizedTriageNotes,
+      medicalHistorySummary: sanitizedMedicalHistorySummary,
       vitals: {
         heartRate: Number.isFinite(Number(vitals?.heartRate)) ? Number(vitals.heartRate) : undefined,
         bloodPressure: vitals?.bloodPressure || undefined,
@@ -529,7 +616,12 @@ exports.newRequest = async (req, res, next) => {
       requestTime: new Date(),
     }], createOptions);
 
-    const hospital = await findAvailableHospital(location, request.type, sessionData);
+    const hospital = await runNonCriticalSideEffect(
+      'Available hospital lookup',
+      () => findAvailableHospital(location, request.type, sessionData),
+      { requestId: request._id.toString(), requestType: request.type }
+    );
+
     if (hospital?.userId) {
       request.assignedHospital = hospital.userId;
       const saveOptions = {};
@@ -544,27 +636,45 @@ exports.newRequest = async (req, res, next) => {
 
     const priorityMap = { CRITICAL: 3, HIGH: 2, MEDIUM: 1, LOW: 0 };
     const jobPriority = priorityMap[request.priority] || 1;
+    let dispatchQueued = false;
     try {
-      await getDispatchQueueModule().addDispatchJob(request._id.toString(), 'allocate', null, jobPriority);
+      await withDispatchQueueTimeout(
+        () => getDispatchQueueModule().addDispatchJob(request._id.toString(), 'allocate', null, jobPriority),
+        'Dispatch queue enqueue'
+      );
+      dispatchQueued = true;
     } catch (queueErr) {
       logger.error('Failed to enqueue dispatch job after request commit', {
         requestId: request._id.toString(),
         error: queueErr.message,
       });
+      // Redis/BullMQ is unavailable locally or during a transient outage.
+      // Keep the request durable and attempt direct allocation in the background.
+      scheduleNonCriticalSideEffect(
+        'Direct dispatch fallback',
+        () => processQueuedAssignment(req.app.get('io')),
+        { requestId: request._id.toString() }
+      );
     }
 
-    // Invalidate emergency-related cache immediately
-    await cache.invalidateEmergencyData();
+    scheduleNonCriticalSideEffect(
+      'Emergency cache invalidation',
+      () => cache.invalidateEmergencyData(),
+      { requestId: request._id.toString() }
+    );
 
-    // Update real-time monitoring metrics
-    await getRealtimeMonitor().updateRequestStatus(
-      request._id,
-      request.status,
-      'PENDING',
-      {
-        priority: request.priority,
-        location: request.location,
-      }
+    scheduleNonCriticalSideEffect(
+      'Realtime request monitoring update',
+      () => getRealtimeMonitor().updateRequestStatus(
+        request._id,
+        request.status,
+        'PENDING',
+        {
+          priority: request.priority,
+          location: request.location,
+        }
+      ),
+      { requestId: request._id.toString() }
     );
 
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -593,6 +703,10 @@ exports.newRequest = async (req, res, next) => {
       success: true,
       data: request,
       allocated: false,
+      dispatchQueued,
+      message: dispatchQueued
+        ? 'Emergency request submitted. Dispatch is processing it now.'
+        : 'Emergency request submitted. Dispatch service is reconnecting and will process it shortly.',
     });
 
   } catch (err) {
@@ -697,7 +811,7 @@ exports.driverResponse = async (req, res, next) => {
     }
 
     // â”€â”€ Acceptance: transition to EN_ROUTE â”€â”€
-    request.status         = REQUEST_STATUS.EN_ROUTE;
+    syncRequestState(request, REQUEST_STATUS.EN_ROUTE);
     request.allocationTime = request.allocationTime || new Date();
 
     const saveOptions = {};
@@ -706,7 +820,9 @@ exports.driverResponse = async (req, res, next) => {
     }
     await request.save(saveOptions);
 
-    myAmb.status = AMBULANCE_STATUS.EN_ROUTE;
+    // The request records EN_ROUTE; BUSY remains the vehicle state for an
+    // ambulance reserved for an active emergency.
+    myAmb.status = AMBULANCE_STATUS.BUSY;
     const ambSaveOptions = {};
     if (useTransaction && session) {
       ambSaveOptions.session = session;
@@ -772,7 +888,12 @@ exports.getActive = async (req, res, next) => {
       userId: req.user._id,
       status: { $in: [REQUEST_STATUS.PENDING, REQUEST_STATUS.ASSIGNED, REQUEST_STATUS.EN_ROUTE] },
     })
-      .populate('assignedAmbulanceId', 'plateNumber driverId currentLocation')
+      .populate({
+        path: 'assignedAmbulanceId',
+        select: 'plateNumber driverId currentLocation',
+        populate: { path: 'driverId', select: 'name phone' },
+      })
+      .populate('assignedHospital', 'name phone')
       .lean();
 
     if (!request) {
@@ -828,7 +949,17 @@ exports.getAssignments = async (req, res, next) => {
     const withEta = await Promise.all(requests.map(async (r) => {
       const doc = { ...r };
       if (r.location?.coordinates && amb.currentLocation?.coordinates) {
-        const eta = await estimateEta(amb.currentLocation.coordinates, r.location.coordinates);
+        let eta;
+        try {
+          eta = await estimateEta(amb.currentLocation.coordinates, r.location.coordinates);
+        } catch (err) {
+          // Mission visibility takes precedence over the optional ETA enhancement.
+          logger.warn('Assignment ETA failed; using straight-line estimate', {
+            requestId: r._id.toString(),
+            error: err.message,
+          });
+          eta = fallbackEta(amb.currentLocation.coordinates, r.location.coordinates);
+        }
         doc.eta = Math.round(eta / 60);
         doc.etaSeconds = eta;
       }
@@ -883,7 +1014,7 @@ exports.track = async (req, res, next) => {
         throw new AppError(`Cannot transition from ${request.status} to ${status}`, 400);
       }
 
-      request.status = status;
+      syncRequestState(request, status);
 
       if (status === REQUEST_STATUS.COMPLETED) {
         request.completionTime = new Date();
@@ -1004,6 +1135,7 @@ exports.cancelRequest = async (req, res, next) => {
     }
 
     let cancelledAmbulance = null;
+    let releasedHospital = null;
     if (request.assignedAmbulanceId) {
       cancelledAmbulance = await Ambulance.findById(request.assignedAmbulanceId).session(session);
       if (cancelledAmbulance) {
@@ -1012,7 +1144,21 @@ exports.cancelRequest = async (req, res, next) => {
       }
     }
 
-    request.status = REQUEST_STATUS.CANCELLED;
+    // Release bed if assigned to hospital
+    if (request.assignedHospital && request.assignedBedType) {
+      releasedHospital = await Hospital.findOne({ userId: request.assignedHospital }).session(session);
+      if (releasedHospital) {
+        const bed = releasedHospital.beds.find(b => b.type === request.assignedBedType);
+        if (bed && bed.available < bed.total) {
+          bed.available += 1;
+          bed.lastUpdated = new Date();
+          releasedHospital.updateCapacityStatus();
+          await releasedHospital.save({ session });
+        }
+      }
+    }
+
+    syncRequestState(request, REQUEST_STATUS.CANCELLED);
     await request.save({ session });
 
     await DispatchLog.findOneAndUpdate(
@@ -1040,6 +1186,22 @@ exports.cancelRequest = async (req, res, next) => {
       io.to(`user_${req.user._id}`).emit('requestCancelled', {
         requestId: request._id,
       });
+      if (releasedHospital) {
+        io.to('admins').emit('hospitalCapacityUpdate', {
+          hospitalId: releasedHospital._id,
+          userId: releasedHospital.userId,
+          name: releasedHospital.name,
+          capacityStatus: releasedHospital.capacityStatus,
+          beds: releasedHospital.beds,
+        });
+        io.to(`hospital_${releasedHospital.userId}`).emit('hospitalCapacityUpdate', {
+          hospitalId: releasedHospital._id,
+          userId: releasedHospital.userId,
+          name: releasedHospital.name,
+          capacityStatus: releasedHospital.capacityStatus,
+          beds: releasedHospital.beds,
+        });
+      }
     }
 
     if (cancelledAmbulance) {

@@ -4,9 +4,11 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs').promises;
+const { Buffer } = require('buffer');
 const cloudinary = require('cloudinary').v2;
 const MedicalRecord = require('../models/MedicalRecord');
 const User = require('../models/User');
+const EmergencyRequest = require('../models/EmergencyRequest');
 const AppError = require('../utils/AppError');
 const { ROLES } = require('../utils/constants');
 
@@ -37,6 +39,82 @@ const ALLOWED_MIME_TYPES = new Set([
 ]);
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MEDICAL_FILE_URL_TTL_SECONDS = parseInt(process.env.MEDICAL_FILE_URL_TTL_SECONDS, 10) || 300;
+
+const hasCloudinarySigningConfig = () => REQUIRED_CLOUDINARY_VARS.every((v) => Boolean(process.env[v]));
+
+const getResourceType = (record) => record.fileType === 'pdf' || record.recordType === 'pdf' ? 'raw' : 'image';
+
+const getSignedCloudinaryUrl = (record) => {
+  if (!record.filePublicId || !hasCloudinarySigningConfig()) return null;
+
+  return cloudinary.url(record.filePublicId, {
+    resource_type: getResourceType(record),
+    type: 'authenticated',
+    sign_url: true,
+    secure: true,
+    expires_at: Math.floor(Date.now() / 1000) + MEDICAL_FILE_URL_TTL_SECONDS,
+  });
+};
+
+const streamStoredMedicalFile = async (record, res) => {
+  if (typeof fetch !== 'function') {
+    throw new AppError('File proxy unavailable in this runtime', 503);
+  }
+
+  const response = await fetch(record.fileUrl);
+  if (!response.ok) {
+    throw new AppError('Medical file storage service unavailable', 502);
+  }
+
+  const contentType = response.headers.get('content-type') || record.mimeType || 'application/octet-stream';
+  res.set('Content-Type', contentType);
+  res.set('Cache-Control', 'private, no-store');
+  if (record.fileName) {
+    res.set('Content-Disposition', `inline; filename="${String(record.fileName).replace(/"/g, '')}"`);
+  }
+
+  const body = Buffer.from(await response.arrayBuffer());
+  return res.status(200).send(body);
+};
+
+const hasHospitalAccessToPatient = async (hospitalId, patientId) => {
+  const [assignedRequest, sharedRecord] = await Promise.all([
+    EmergencyRequest.exists({ userId: patientId, assignedHospital: hospitalId }),
+    MedicalRecord.exists({
+      userId: patientId,
+      sharedWith: {
+        $elemMatch: {
+          hospitalId,
+          expiresAt: { $gt: new Date() },
+        },
+      },
+    }),
+  ]);
+
+  return !!assignedRequest || !!sharedRecord;
+};
+
+const canViewRecord = async (user, record) => {
+  if (String(user._id) === String(record.userId)) return true;
+  if (user.role !== ROLES.HOSPITAL) return false;
+
+  const activeShare = (record.sharedWith || []).some(
+    (share) => String(share.hospitalId) === String(user._id) && new Date(share.expiresAt) > new Date()
+  );
+  if (activeShare) return true;
+
+  return hasHospitalAccessToPatient(user._id, record.userId);
+};
+
+const toClientRecord = (record) => {
+  const { fileUrl, sharedWith, ...safeRecord } = record.toObject ? record.toObject() : record;
+  const id = record._id || record.id;
+  return {
+    ...safeRecord,
+    viewUrl: `/api/medical/record/${id}/view`,
+  };
+};
 
 // POST /api/medical/upload
 exports.uploadMedicalRecord = async (req, res, next) => {
@@ -61,6 +139,7 @@ exports.uploadMedicalRecord = async (req, res, next) => {
       uploadResult = await cloudinary.uploader.upload(req.file.path, {
         folder: `medical-records/${req.user._id}`,
         resource_type: resourceType,
+        type: 'authenticated',
         public_id: `${Date.now()}-${path.parse(req.file.originalname).name}`,
         tags: [`user-${req.user._id}`, fileType],
       });
@@ -85,7 +164,7 @@ exports.uploadMedicalRecord = async (req, res, next) => {
       mimeType: req.file.mimetype,
     });
 
-    res.status(201).json({ success: true, data: record });
+    res.status(201).json({ success: true, data: toClientRecord(record) });
   } catch (err) {
     if (req.file?.path) {
       await fs.unlink(req.file.path).catch(() => {});
@@ -104,7 +183,10 @@ exports.getMedicalRecords = async (req, res, next) => {
     const limitNum = Math.min(100, parseInt(limit, 10) || 50);
     const skip = (pageNum - 1) * limitNum;
 
-    if (req.user.role !== ROLES.HOSPITAL && String(req.user._id) !== userId) {
+    if (req.user.role === ROLES.HOSPITAL) {
+      const hasAccess = await hasHospitalAccessToPatient(req.user._id, userId);
+      if (!hasAccess) throw new AppError('Not authorised to view these records', 403);
+    } else if (String(req.user._id) !== userId) {
       throw new AppError('Not authorised to view these records', 403);
     }
 
@@ -135,7 +217,7 @@ exports.getMedicalRecords = async (req, res, next) => {
       total,
       page: pageNum,
       pages: Math.ceil(total / limitNum),
-      data: records,
+      data: records.map(toClientRecord),
       patient: { id: user._id, name: user.name },
     });
   } catch (err) {
@@ -152,11 +234,35 @@ exports.getMedicalRecord = async (req, res, next) => {
 
     if (!record) throw new AppError('Medical record not found', 404);
 
-    if (req.user.role !== ROLES.HOSPITAL && String(req.user._id) !== String(record.userId)) {
+    if (!(await canViewRecord(req.user, record))) {
       throw new AppError('Not authorised to view this record', 403);
     }
 
-    res.status(200).json({ success: true, data: record });
+    res.status(200).json({ success: true, data: toClientRecord(record) });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/medical/record/:id/view
+exports.viewMedicalRecordFile = async (req, res, next) => {
+  try {
+    const record = await MedicalRecord.findById(req.params.id)
+      .select('-sharedWith.accessToken')
+      .lean();
+
+    if (!record) throw new AppError('Medical record not found', 404);
+    if (!(await canViewRecord(req.user, record))) {
+      throw new AppError('Not authorised to view this record', 403);
+    }
+    if (!record.fileUrl) throw new AppError('File URL not found', 404);
+
+    const signedUrl = getSignedCloudinaryUrl(record);
+    if (signedUrl) {
+      return res.redirect(302, signedUrl);
+    }
+
+    return streamStoredMedicalFile(record, res);
   } catch (err) {
     next(err);
   }
@@ -180,6 +286,7 @@ exports.deleteMedicalRecord = async (req, res, next) => {
         const resourceType = record.fileType === 'pdf' ? 'raw' : 'image';
         await cloudinary.uploader.destroy(record.filePublicId, { 
           invalidate: true,
+          type: 'authenticated',
           resource_type: resourceType 
         });
       } catch (cloudErr) {

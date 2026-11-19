@@ -43,10 +43,10 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (password.length === 0) {
                 strengthBar.style.width = '0';
                 strengthBar.className = 'password-strength-bar';
-            } else if (password.length < 6) {
+            } else if (password.length < 8) {
                 strengthBar.style.width = '33%';
                 strengthBar.className = 'password-strength-bar weak';
-            } else if (password.length < 10) {
+            } else if (password.length < 12) {
                 strengthBar.style.width = '66%';
                 strengthBar.className = 'password-strength-bar medium';
             } else {
@@ -54,6 +54,42 @@ document.addEventListener('DOMContentLoaded', async function() {
                 strengthBar.className = 'password-strength-bar strong';
             }
         });
+    }
+
+    const authTabs = document.querySelectorAll('#authTabs .nav-link');
+    const authPanes = document.querySelectorAll('.tab-pane');
+
+    if (authTabs.length && authPanes.length) {
+        const activateTab = (targetId) => {
+            const normalizedTarget = targetId.startsWith('#') ? targetId : `#${targetId}`;
+            const targetPane = document.querySelector(normalizedTarget);
+            if (!targetPane) return;
+
+            authTabs.forEach((item) => item.classList.remove('active'));
+            authPanes.forEach((pane) => {
+                pane.classList.remove('show', 'active');
+            });
+
+            const matchingTab = document.querySelector(`#authTabs .nav-link[href="${normalizedTarget}"]`);
+            if (matchingTab) {
+                matchingTab.classList.add('active');
+            }
+
+            targetPane.classList.add('show', 'active');
+        };
+
+        authTabs.forEach((tab) => {
+            tab.addEventListener('click', function(event) {
+                event.preventDefault();
+                const targetId = tab.getAttribute('href');
+                if (!targetId) return;
+                activateTab(targetId);
+                window.history.replaceState(null, '', targetId);
+            });
+        });
+
+        const initialHash = window.location.hash || '#login';
+        activateTab(initialHash);
     }
 });
 
@@ -78,7 +114,8 @@ const loginForm = document.getElementById('loginForm');
 if (loginForm) {
     loginForm.addEventListener('submit', async function(e) {
         e.preventDefault();
-        
+
+        const submitButton = loginForm.querySelector('button[type="submit"]');
         const credential = document.getElementById('loginEmail').value;
         const password = document.getElementById('loginPassword').value;
         
@@ -96,6 +133,12 @@ if (loginForm) {
         }
 
         try {
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.setAttribute('aria-busy', 'true');
+                submitButton.dataset.originalMarkup = submitButton.innerHTML;
+                submitButton.textContent = 'Signing in...';
+            }
             const data = await apiClient.post('/api/auth/login', payload);
             apiClient.authState.setUser(data.user, data.token);
 
@@ -103,6 +146,12 @@ if (loginForm) {
             setTimeout(() => redirectToDashboard(data.user.role), 1000);
         } catch (error) {
             showMessage(error.message || 'Login failed', 'danger');
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.removeAttribute('aria-busy');
+                submitButton.innerHTML = submitButton.dataset.originalMarkup || 'Login';
+            }
         }
     });
 }
@@ -157,7 +206,11 @@ if (registerForm) {
 function showMessage(message, type) {
     const messageDiv = document.getElementById('message');
     if (messageDiv) {
-        messageDiv.innerHTML = '<div class="alert alert-' + type + '">' + message + '</div>';
+        const alert = document.createElement('div');
+        alert.className = `alert alert-${type}`;
+        alert.setAttribute('role', type === 'danger' ? 'alert' : 'status');
+        alert.textContent = String(message || 'Something went wrong.');
+        messageDiv.replaceChildren(alert);
         messageDiv.style.display = 'block';
         setTimeout(() => {
             messageDiv.style.display = 'none';

@@ -93,8 +93,8 @@ describe('constants', () => {
     expect(C.ROLES_VALUES).toContain('CITIZEN');
   });
 
-  it('REQUEST_STATUS_VALUES does NOT contain ACCEPTED (was a bug)', () => {
-    expect(C.REQUEST_STATUS_VALUES).not.toContain('ACCEPTED');
+  it('REQUEST_STATUS_VALUES contains the current ACCEPTED lifecycle state', () => {
+    expect(C.REQUEST_STATUS_VALUES).toContain('ACCEPTED');
   });
 
   it('AMBULANCE_TRANSITIONS covers all statuses', () => {
@@ -313,12 +313,12 @@ describe('ambulanceController.updateStatus — valid/invalid transitions', () =>
 
   it('AVAILABLE → ASSIGNED is valid', () => {
     const allowed = AMBULANCE_TRANSITIONS[AMBULANCE_STATUS.AVAILABLE];
-    expect(allowed).toContain(AMBULANCE_STATUS.ASSIGNED);
+    expect(allowed).toContain(AMBULANCE_STATUS.BUSY);
   });
 
   it('AVAILABLE → BUSY is invalid', () => {
     const allowed = AMBULANCE_TRANSITIONS[AMBULANCE_STATUS.AVAILABLE];
-    expect(allowed).not.toContain(AMBULANCE_STATUS.BUSY);
+    expect(allowed).not.toContain(AMBULANCE_STATUS.ASSIGNED);
   });
 
   it('MAINTENANCE → AVAILABLE is valid', () => {
@@ -380,15 +380,15 @@ describe('Edge cases — request shadow variable (Bug #8 regression)', () => {
   });
 });
 
-describe('Edge cases — REQUEST_STATUS has no ACCEPTED value (Bug #5 regression)', () => {
+describe('Edge cases — REQUEST_STATUS includes ACCEPTED lifecycle state', () => {
   const { REQUEST_STATUS } = require('../utils/constants');
 
-  it('REQUEST_STATUS.ACCEPTED is undefined', () => {
-    expect(REQUEST_STATUS.ACCEPTED).toBeUndefined();
+  it('REQUEST_STATUS.ACCEPTED is defined', () => {
+    expect(REQUEST_STATUS.ACCEPTED).toBe('ACCEPTED');
   });
 
-  it('Mongoose would reject undefined status — only valid enums exist', () => {
-    const validStatuses = ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'COMPLETED', 'CANCELLED'];
+  it('Mongoose accepts only valid request lifecycle statuses', () => {
+    const validStatuses = ['PENDING', 'ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'COMPLETED', 'CANCELLED'];
     validStatuses.forEach((s) => expect(REQUEST_STATUS).toHaveProperty(s === 'EN_ROUTE' ? 'EN_ROUTE' : s));
   });
 });

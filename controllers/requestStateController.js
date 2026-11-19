@@ -6,6 +6,7 @@ const Ambulance = require('../models/Ambulance');
 const DispatchLog = require('../models/DispatchLog');
 const AppError = require('../utils/AppError');
 const RequestStateMachine = require('../utils/requestStateMachine');
+const { syncRequestState } = require('../utils/requestStateMachine');
 const eventConsistency = require('../utils/eventConsistency');
 const { AuditLogger } = require('../models/AuditLog');
 const realtimeMonitor = require('../utils/realtimeMonitor');
@@ -75,9 +76,7 @@ exports.acceptAssignment = async (req, res, next) => {
       timestamp: new Date(),
     });
 
-    // Update request
-    request.status = REQUEST_STATUS.ACCEPTED;
-    request.acceptedAt = new Date();
+    request.acceptedTime = new Date();
     await request.save({ session });
 
     // Publish event
@@ -110,7 +109,7 @@ exports.acceptAssignment = async (req, res, next) => {
       {
         driverId: req.user._id.toString(),
         ambulanceId: driver._id.toString(),
-        acceptedTime: new Date(),
+        acceptedTime: request.acceptedTime,
       }
     );
 
@@ -183,7 +182,7 @@ exports.rejectAssignment = async (req, res, next) => {
     });
 
     // Update request
-    request.status = REQUEST_STATUS.PENDING;
+    syncRequestState(request, 'REJECTED');
     request.assignedAmbulanceId = undefined;
     request.rejectionCount = (request.rejectionCount || 0) + 1;
     await request.save({ session });
@@ -290,9 +289,10 @@ exports.markEnRoute = async (req, res, next) => {
 
     await stateMachine.transitionTo('EN_ROUTE', { driverId: req.user._id });
 
-    request.status = REQUEST_STATUS.EN_ROUTE;
-    request.enRouteAt = new Date();
-    driver.status = AMBULANCE_STATUS.EN_ROUTE;
+    syncRequestState(request, REQUEST_STATUS.EN_ROUTE);
+    request.enRouteTime = new Date();
+    // The request records EN_ROUTE; the ambulance remains unavailable.
+    driver.status = AMBULANCE_STATUS.BUSY;
 
     await Promise.all([request.save({ session }), driver.save({ session })]);
 
@@ -321,12 +321,12 @@ exports.markEnRoute = async (req, res, next) => {
       {
         driverId: req.user._id.toString(),
         ambulanceId: driver._id.toString(),
-        enRouteTime: new Date(),
+        enRouteTime: request.enRouteTime,
       }
     );
     await realtimeMonitor.updateAmbulanceStatus(
       driver._id,
-      AMBULANCE_STATUS.EN_ROUTE,
+      AMBULANCE_STATUS.BUSY,
       {
         currentRequestId: request._id.toString(),
         location: driver.currentLocation,

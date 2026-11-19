@@ -57,7 +57,7 @@
 
 ### Safety & Compliance
 - **Request State Machine**: Strict state transitions preventing invalid workflows
-- **Immutable Audit Logs**: Tamper-proof record of all critical actions
+- **Audit records**: application-level event records; not cryptographically immutable
 - **Load Shedding**: Graceful degradation during high load
 - **Event Consistency**: Redis streams ensuring strict event ordering
 
@@ -304,7 +304,7 @@ logs all events in chronological order:
 
 ---
 
-## 9. Audit & Compliance (Immutable Logs)
+## 9. Audit Records (Prototype Scope)
 
 ### AuditLog Schema
 
@@ -325,7 +325,7 @@ logs all events in chronological order:
     userAgent: string
   },
   timestamp: Date,
-  _immutable: true                       // Prevents modification/deletion
+  // Application audit records are not a cryptographic integrity mechanism.
 }
 ```
 
@@ -333,9 +333,7 @@ logs all events in chronological order:
 
 ```javascript
 // Database pre-hook prevents updates:
-if (this._immutable) {
-  throw new Error('Immutable audit log cannot be modified');
-}
+// Do not claim immutability without an external integrity mechanism.
 
 // All updates/deletes throw error automatically
 ```
@@ -703,7 +701,7 @@ redis-cli keys "bull:*:active"
 pm2 restart all
 ```
 
-This deployment guide ensures your Emergency Response System is production-ready with enterprise-grade reliability, security, and scalability.
+This guide describes deployment configuration for research environments. It does not establish production readiness, enterprise certification, or measured scalability.
 
 # Redis
 REDIS_URL=redis://redis-cluster:6379
@@ -862,7 +860,7 @@ requestCache: new LRU({ max: 10000 })
 metricsCache: redis with 30s TTL
 
 // Cold data in MongoDB (permanent)
-auditLogs: immutable collection with index on timestamp
+auditLogs: indexed audit collection
 ```
 
 ---
@@ -938,7 +936,7 @@ Redis:
   - Backup to S3 hourly
 
 Audit Logs:
-  - Immutable append-only in MongoDB
+  - Application audit records stored in MongoDB
   - Daily export to encrypted S3 archive
   - Retention: 7 years (compliance)
 ```
@@ -964,10 +962,10 @@ mongoimport --db ers --collection audit_logs_restored audit-logs/
 
 The ERS real-time system provides:
 
-✅ **Production-grade reliability** with atomic operations and immutable audit trails  
+Implemented reliability mechanisms and application audit records, subject to environment-specific validation.  
 ✅ **Real-time tracking** with sub-500ms location updates to hospitals  
 ✅ **Intelligent dispatch** with adaptive scoring based on system load  
-✅ **Compliance** with tamper-proof logs and traceability  
+Application audit traceability; no compliance certification or tamper-proof claim.  
 ✅ **Scalability** to 10k+ concurrent users with geographic distribution  
 ✅ **Safety** with strict state machine preventing invalid workflows  
 

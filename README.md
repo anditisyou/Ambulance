@@ -1,6 +1,6 @@
 ﻿# ðŸš‘ Emergency Response System â€” Production-Grade
 
-A **production-ready** real-time emergency dispatch platform built with **Node.js Â· Express Â· MongoDB Â· Socket.IO Â· Redis**.
+A research-oriented Emergency Response System prototype for experimental evaluation of emergency dispatch, matching, routing, workflow, and related capabilities. It is not a production deployment claim.
 
 ## âœ¨ Production-Grade Features
 
@@ -9,18 +9,18 @@ A **production-ready** real-time emergency dispatch platform built with **Node.j
 - **Real Alert Delivery**: Slack, email, and webhook notifications for system alerts
 - **Health Checks**: Comprehensive `/health` endpoint with system diagnostics
 - **Metrics Dashboard**: Real-time visualization at `/metrics-dashboard`
-- **Load Testing**: 1000-user simulation with detailed performance analysis
+- **Load Testing**: reproducible API workload runner with recorded measurements
 
 ### ðŸ›¡ï¸ Security & Observability
 - **Enterprise Security**: Helmet.js, CORS, MongoDB sanitization, CSRF protection
 - **Advanced Monitoring**: Prometheus metrics export, structured logging
 - **Alert Management**: Multi-channel alerting with cooldown prevention
-- **Audit Compliance**: Immutable audit logs with tamper-proof records
+- **Audit Records**: schema-validated application audit events; no cryptographic immutability claim
 
 ### âš¡ Performance & Scalability
 - **Horizontal Scaling**: Multi-instance deployment with Redis session sharing
 - **Queue Management**: BullMQ with priority queues and retry logic
-- **Load Shedding**: Graceful degradation under extreme load (10k+ users)
+- **Load Shedding**: prototype behavior to evaluate under a measured workload
 - **Database Optimization**: Connection pooling, indexing, and query optimization
 
 ---
@@ -190,8 +190,9 @@ npm test
 | Method | Path | Access | Description |
 |---|---|---|---|
 | POST | `/upload` | Authenticated | Upload medical file |
-| GET | `/:userId` | Owner/Hospital | Get user's records |
+| GET | `/user/:userId` | Owner/Hospital | Get user's records |
 | GET | `/record/:id` | Owner/Hospital | Get single record |
+| GET | `/record/:id/view` | Owner/Hospital | View/download file through ERS authorization |
 | DELETE | `/record/:id` | Owner | Delete record |
 | POST | `/share/:recordId` | Owner | Share with hospital |
 
@@ -215,10 +216,13 @@ npm test
 ## Security Model
 
 - **JWT** authentication with token blacklist (Redis in production, in-memory fallback in development)
-- **httpOnly + SameSite:Strict** cookies â€” tokens never accessible from JavaScript
+- **httpOnly + SameSite:Strict** cookies for browser authentication; browser code does not persist JWTs in Web Storage
+- **Bearer token compatibility** remains for API clients and tests; authenticated routes accept either the cookie or an `Authorization: Bearer ...` header
+- **CSRF protection** uses a double-submit `ers_csrf` cookie plus `X-CSRF-Token` header for cookie-authenticated browser state changes; bearer-token API clients do not require CSRF headers
 - **Token revocation** on logout â€” tokens invalidated immediately, not just at expiry
 - **bcrypt** password hashing with work factor 12 (OWASP 2024 minimum)
 - **Role-based access control** on every route â€” no unauthenticated or wrong-role access
+- **Medical-file access** is mediated by ERS authorization; Cloudinary files are delivered via short-lived signed authenticated URLs when configured, with an ERS proxy fallback for legacy stored URLs
 - **Input sanitisation** â€” all pagination parameters clamped, descriptions truncated, coordinates range-validated
 - **Export DoS prevention** â€” analytics export hard-capped at 10,000 rows
 - **Generic error messages** for auth failures â€” prevents user enumeration
@@ -291,7 +295,7 @@ curl http://localhost:3000/health
 npm run test:load:quick
 ```
 
-### Full Production Load Test (1000 users, 5 minutes)
+### Research Load Experiment (1000 users, 5 minutes)
 ```bash
 npm run test:load:full
 ```
@@ -310,7 +314,7 @@ node scripts/load-test.js [duration_seconds] [max_users]
 
 ---
 
-## Production Deployment
+## Deployment Notes
 
 ### Environment Setup
 ```bash
@@ -341,7 +345,7 @@ docker-compose -f docker-compose.prod.yml up -d
 - **Health Check**: `https://your-domain.com/health`
 - **Readiness Check**: `https://your-domain.com/ready`
 
-`/health` is a lightweight liveness endpoint (always HTTP 200 with status payload).
+`/health` returns a lightweight status payload with HTTP 200 when critical dependencies are healthy and HTTP 503 when a critical dependency such as MongoDB is degraded or unavailable.
 `/ready` is a strict dependency gate (HTTP 503 when DB/Redis dependencies are not ready).
 
 ### Scaling Configuration

@@ -10,6 +10,8 @@ router.use(protect);
 
 router.post('/',                authorize(ROLES.DRIVER),                              ctrl.registerOrUpdate);
 router.get('/',                 authorize(ROLES.ADMIN, ROLES.DISPATCHER, ROLES.DRIVER), ctrl.getAll);
+router.get('/me/export',        authorize(ROLES.DRIVER),                             ctrl.exportData);
+router.get('/me/statistics',    authorize(ROLES.DRIVER),                             ctrl.getStatistics);
 router.get('/:id',              authorize(ROLES.ADMIN, ROLES.DISPATCHER, ROLES.DRIVER), ctrl.getById);
 router.patch('/:id/status',     authorize(ROLES.ADMIN, ROLES.DRIVER),                ctrl.updateStatus);
 router.patch('/:id/location',   authorize(ROLES.DRIVER),                             ctrl.updateLocation);

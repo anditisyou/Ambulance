@@ -9,6 +9,34 @@
 
 const { REQUEST_STATUS, AMBULANCE_STATUS } = require('./constants');
 
+const STATUS_BACKED_ASSIGNMENT_STATES = new Set([
+  REQUEST_STATUS.PENDING,
+  REQUEST_STATUS.ASSIGNED,
+  REQUEST_STATUS.ACCEPTED,
+  REQUEST_STATUS.EN_ROUTE,
+  REQUEST_STATUS.COMPLETED,
+  REQUEST_STATUS.CANCELLED,
+]);
+
+const STATUS_FOR_ASSIGNMENT_STATE = Object.freeze({
+  REJECTED: REQUEST_STATUS.PENDING,
+});
+
+const publicStatusForAssignmentState = (state) => {
+  if (STATUS_BACKED_ASSIGNMENT_STATES.has(state)) return state;
+  return STATUS_FOR_ASSIGNMENT_STATE[state];
+};
+
+/** Keep assignmentState authoritative while mirroring compatible public status. */
+const syncRequestState = (request, state) => {
+  request.assignmentState = state;
+  const status = publicStatusForAssignmentState(state);
+  if (status) {
+    request.status = status;
+  }
+  return request;
+};
+
 const VALID_TRANSITIONS = {
   PENDING: ['ASSIGNED', 'CANCELLED'],
   ASSIGNED: ['ACCEPTED', 'REJECTED', 'CANCELLED'],
@@ -22,7 +50,7 @@ const VALID_TRANSITIONS = {
 class RequestStateMachine {
   constructor(request) {
     this.request = request;
-    this.currentState = request.status;
+    this.currentState = request.assignmentState || request.status;
     this.transitionHistory = [];
   }
 
@@ -40,6 +68,7 @@ class RequestStateMachine {
 
     const oldState = this.currentState;
     this.currentState = newState;
+    syncRequestState(this.request, newState);
     this.transitionHistory.push({
       from: oldState,
       to: newState,
@@ -77,3 +106,5 @@ class RequestStateMachine {
 }
 
 module.exports = RequestStateMachine;
+module.exports.syncRequestState = syncRequestState;
+module.exports.publicStatusForAssignmentState = publicStatusForAssignmentState;

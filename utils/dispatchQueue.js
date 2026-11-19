@@ -132,7 +132,7 @@ const dispatchWorker = new Worker('dispatch', async (job) => {
       if (action === 'allocate') {
         result = await allocateAmbulance(request, session, true, request.assignedHospital);
       } else if (action === 'retry') {
-        result = await handleRejection(request, session, true);
+        result = await handleRejection(request, session);
       } else if (action === 'timeout-check') {
         const isExpectedAmbulance = request.assignedAmbulanceId &&
           String(request.assignedAmbulanceId) === String(job.data.ambulanceId);
@@ -355,7 +355,7 @@ const reconcileDispatchState = async () => {
       const requestId = String(request._id);
       const ambulanceId = ambulance?._id ? String(ambulance._id) : null;
 
-      const isAmbulanceValid = ambulance && [AMBULANCE_STATUS.ASSIGNED, AMBULANCE_STATUS.EN_ROUTE].includes(ambulance.status);
+      const isAmbulanceValid = ambulance && [AMBULANCE_STATUS.BUSY, AMBULANCE_STATUS.ASSIGNED, AMBULANCE_STATUS.EN_ROUTE].includes(ambulance.status);
       if (!isAmbulanceValid) {
         logger.warn('Found orphaned assigned request; resetting and requeuing', { requestId, ambulanceId, ambulanceStatus: ambulance?.status });
 
@@ -463,8 +463,8 @@ const verifyRequestAmbulanceConsistency = async () => {
 
     const ambulanceStatus = ambulance.status;
 
-    if (requestStatus === REQUEST_STATUS.ASSIGNED && ambulanceStatus !== AMBULANCE_STATUS.ASSIGNED) {
-      logger.warn('Consistency violation: request ASSIGNED but ambulance is not ASSIGNED', { requestId, ambulanceId, ambulanceStatus });
+    if (requestStatus === REQUEST_STATUS.ASSIGNED && ![AMBULANCE_STATUS.BUSY, AMBULANCE_STATUS.ASSIGNED].includes(ambulanceStatus)) {
+      logger.warn('Consistency violation: request ASSIGNED but ambulance is not BUSY', { requestId, ambulanceId, ambulanceStatus });
       if (ambulanceStatus === AMBULANCE_STATUS.EN_ROUTE) {
         await EmergencyRequest.findByIdAndUpdate(requestId, {
           status: REQUEST_STATUS.EN_ROUTE,
@@ -484,8 +484,8 @@ const verifyRequestAmbulanceConsistency = async () => {
       repairCount++;
     }
 
-    if (requestStatus === REQUEST_STATUS.EN_ROUTE && ambulanceStatus !== AMBULANCE_STATUS.EN_ROUTE) {
-      logger.warn('Consistency violation: request EN_ROUTE but ambulance is not EN_ROUTE', { requestId, ambulanceId, ambulanceStatus });
+    if (requestStatus === REQUEST_STATUS.EN_ROUTE && ![AMBULANCE_STATUS.BUSY, AMBULANCE_STATUS.EN_ROUTE].includes(ambulanceStatus)) {
+      logger.warn('Consistency violation: request EN_ROUTE but ambulance is not BUSY', { requestId, ambulanceId, ambulanceStatus });
       await EmergencyRequest.findByIdAndUpdate(requestId, {
         status: REQUEST_STATUS.ASSIGNED,
         assignmentState: 'ASSIGNED',

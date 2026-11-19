@@ -18,6 +18,7 @@ const fs = require('fs');
 const BASE_URL = process.env.TEST_API_URL || 'http://localhost:3000/api';
 const DURATION = parseInt(process.argv[2]) || 300; // 5 minutes default
 const MAX_USERS = parseInt(process.argv[3]) || 1000; // 1000 users default
+const SEED = parseInt(process.env.LOAD_TEST_SEED, 10) || 20261119;
 
 class LoadTester {
   constructor() {
@@ -32,6 +33,7 @@ class LoadTester {
       errors: {},
       usersCreated: 0,
       emergenciesCreated: 0,
+      dispatchCompleted: 0,
       throughput: 0,
     };
 
@@ -52,11 +54,11 @@ class LoadTester {
     const createPromises = [];
     for (let i = 0; i < count; i++) {
       const userData = {
-        name: `LoadTest_User_${i}_${Date.now()}`,
-        email: `loadtest${i}_${Date.now()}@test.com`,
-        phone: `+1${Math.floor(Math.random() * 9000000000) + 1000000000}`,
+        name: `LoadTest_User_${SEED}_${i}`,
+        email: `loadtest-${SEED}-${i}@example.invalid`,
+        phone: `+1${String(1000000000 + ((SEED + i) % 8999999999))}`,
         password: 'Test@1234',
-        role: Math.random() > 0.8 ? 'HOSPITAL' : 'CITIZEN', // 20% hospitals
+        role: 'CITIZEN',
       };
 
       createPromises.push(
@@ -67,7 +69,12 @@ class LoadTester {
               return response.data.token;
             }
           })
-          .catch(() => null) // Ignore registration failures
+          .catch((error) => {
+            const key = error.response?.status ? `HTTP_${error.response.status}` : error.code || error.message;
+            this.stats.failedRequests++;
+            this.stats.errors[key] = (this.stats.errors[key] || 0) + 1;
+            return null;
+          })
       );
     }
 
@@ -84,6 +91,7 @@ class LoadTester {
         userTokens: this.userTokens,
         duration: DURATION,
         endTime: this.endTime,
+        seed: SEED + workerId,
       }
     });
 
@@ -135,6 +143,7 @@ class LoadTester {
       p99ResponseTime: p99.toFixed(2),
       usersCreated: this.stats.usersCreated,
       emergenciesCreated: this.stats.emergenciesCreated,
+      dispatchCompleted: this.stats.dispatchCompleted,
       topErrors: Object.entries(this.stats.errors)
         .sort(([,a], [,b]) => b - a)
         .slice(0, 5)
@@ -147,7 +156,10 @@ class LoadTester {
     this.log(`Target URL: ${BASE_URL}`);
 
     // Phase 1: Create test users
-    await this.createTestUsers(Math.min(200, MAX_USERS)); // Create up to 200 users
+    await this.createTestUsers(MAX_USERS);
+    if (this.userTokens.length === 0) {
+      throw new Error('No load-test users could be created; check TEST_API_URL and test environment configuration');
+    }
 
     // Phase 2: Start load testing workers
     this.log(`Starting ${Math.min(10, MAX_USERS / 10)} worker threads...`);
@@ -171,7 +183,7 @@ class LoadTester {
     const resultsFile = `load-test-results-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
     fs.writeFileSync(resultsFile, JSON.stringify({
       timestamp: new Date().toISOString(),
-      config: { duration: DURATION, maxUsers: MAX_USERS, baseUrl: BASE_URL },
+      config: { duration: DURATION, maxUsers: MAX_USERS, baseUrl: BASE_URL, seed: SEED },
       results: finalStats,
     }, null, 2));
 

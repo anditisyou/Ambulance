@@ -85,8 +85,11 @@ function setAmbulanceStatusDisplay(status, hasAmbulance = true) {
         if (hasAmbulance) {
             if (normalizedStatus === 'AVAILABLE') {
                 statusBtn.textContent = 'Set Maintenance';
-            } else if (['MAINTENANCE', 'BUSY', 'EN_ROUTE'].includes(normalizedStatus)) {
+            } else if (normalizedStatus === 'MAINTENANCE') {
                 statusBtn.textContent = 'Set Available';
+            } else if (['BUSY', 'EN_ROUTE'].includes(normalizedStatus)) {
+                statusBtn.textContent = 'Active Ride';
+                statusBtn.disabled = true;
             } else {
                 statusBtn.textContent = 'Toggle Status';
             }
@@ -120,7 +123,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadAmbulanceStatus();
     await loadActiveMissions();
     
-    refreshInterval = setInterval(loadActiveMissions, 30000);
+    // Retain a short polling fallback when real-time socket delivery is unavailable.
+    refreshInterval = setInterval(loadActiveMissions, 5000);
+
+    // Global action handler
+    document.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (!action) return;
+
+        event.preventDefault();
+
+        switch (action) {
+            case 'refreshRequests':
+                loadActiveMissions();
+                showNotification('Refreshing requests...', 'info');
+                break;
+            case 'exportData':
+                exportData();
+                break;
+            case 'viewStatistics':
+                viewStatistics();
+                break;
+            case 'findNearestHospital':
+                findNearestHospital();
+                break;
+            default:
+                console.warn('Unknown action:', action);
+        }
+    });
 
     const missionsBody = document.getElementById('missionsTableBody') || document.getElementById('emergencyTableBody');
     if (missionsBody) {
@@ -186,7 +216,7 @@ document.addEventListener('visibilitychange', () => {
     } else {
         // Resume updates when tab becomes visible
         if (!refreshInterval) {
-            refreshInterval = setInterval(loadActiveMissions, 30000);
+            refreshInterval = setInterval(loadActiveMissions, 5000);
             loadActiveMissions(); // Immediate refresh
         }
     }
@@ -232,7 +262,6 @@ let socketConnected = false;
 let pollingInterval = null;
 
 function initSocket() {
-    const token = apiClient.authState.getToken();
     if (socket) {
         // Clear existing listeners before creating new socket
         socket.off('connect');
@@ -249,7 +278,6 @@ function initSocket() {
     
     socket = io({
         transports: ['polling', 'websocket'],
-        auth: { token },
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
@@ -288,7 +316,7 @@ function initSocket() {
                 } catch (err) {
                     console.error('Polling fallback failed', err);
                 }
-            }, 30000); // Poll every 30 seconds
+            }, 5000); // Keep active mission state current while disconnected.
         }
     });
     
@@ -305,7 +333,7 @@ function initSocket() {
                 } catch (err) {
                     console.error('Polling fallback failed', err);
                 }
-            }, 30000); // Poll every 30 seconds
+            }, 5000); // Keep active mission state current while disconnected.
         }
     });
     
@@ -514,8 +542,11 @@ async function toggleStatus() {
         let newStatus;
         if (current === 'AVAILABLE') {
             newStatus = 'MAINTENANCE';
-        } else if (['MAINTENANCE', 'BUSY', 'EN_ROUTE'].includes(current)) {
+        } else if (current === 'MAINTENANCE') {
             newStatus = 'AVAILABLE';
+        } else if (['BUSY', 'EN_ROUTE'].includes(current)) {
+            showNotification('Use End Ride when the active emergency is complete.', 'warning');
+            return;
         } else if (current === 'ASSIGNED') {
             showNotification('Cannot toggle status while assigned. Please accept or reject the assignment first.', 'warning');
             return;
@@ -636,6 +667,8 @@ async function loadActiveMissions() {
         }
     } finally {
         isLoadingActiveMissions = false;
+        // Keep the vehicle badge aligned with the server-side assignment state.
+        loadAmbulanceStatus();
     }
 }
 
@@ -647,12 +680,12 @@ function displayMissions(requests) {
     }
 
     if (!driverHasAmbulance) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center">No ambulance registered. Register an ambulance to receive dispatch assignments.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center">No ambulance registered. Register an ambulance to receive dispatch assignments.</td></tr>';
         return;
     }
 
     if (!requests || requests.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center">No active missions found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center">No active missions found</td></tr>';
         return;
     }
     
@@ -689,7 +722,7 @@ function displayMissions(requests) {
                          <button class="btn btn-sm btn-danger btn-respond-assignment" data-request-id="${request._id}" data-accept="false">Reject</button>` : 
                         request.status === 'EN_ROUTE' ? 
                         `<button class="btn btn-sm btn-primary btn-update-location" data-request-id="${request._id}">Update Location</button>
-                         <button class="btn btn-sm btn-success btn-complete-mission" data-request-id="${request._id}">Complete</button>` : 
+                         <button class="btn btn-sm btn-success btn-complete-mission" data-request-id="${request._id}">End Ride</button>` : 
                         request.status === 'COMPLETED' ? 'Completed' : 'In Progress'}
                 </td>
             </tr>
@@ -801,11 +834,126 @@ function refreshRequests() {
 }
 
 function exportData() {
-    showNotification('Export is not yet implemented.', 'info');
+    // Trigger download of ambulance data
+    const link = document.createElement('a');
+    link.href = `/api/ambulances/me/export?format=json`;
+    link.download = 'ambulance-data.json';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showNotification('Data exported successfully', 'success');
 }
 
 function viewStatistics() {
-    showNotification('Statistics view is not yet implemented.', 'info');
+    fetch('/api/ambulances/me/statistics', {
+        credentials: 'include',
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showStatisticsModal(data.data);
+        } else {
+            showNotification('Failed to load statistics', 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error loading statistics:', error);
+        showNotification('Network error', 'danger');
+    });
+}
+
+function showStatisticsModal(stats) {
+    const modalHtml = `
+        <div class="modal fade" id="statisticsModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Ambulance Statistics - ${stats.ambulance.callSign}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Ambulance Info</h6>
+                                <p><strong>Status:</strong> ${stats.ambulance.status}</p>
+                                <p><strong>Capacity:</strong> ${stats.ambulance.capacity}</p>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Request Statistics</h6>
+                                <p><strong>Total Requests:</strong> ${stats.ambulance.totalRequests}</p>
+                                <p><strong>Completed:</strong> ${stats.ambulance.completedRequests}</p>
+                                <p><strong>Cancelled:</strong> ${stats.ambulance.cancelledRequests}</p>
+                                <p><strong>Active:</strong> ${stats.ambulance.activeRequests}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    const modal = new bootstrap.Modal(document.getElementById('statisticsModal'));
+    modal.show();
+    document.getElementById('statisticsModal').addEventListener('hidden.bs.modal', () => {
+        document.getElementById('statisticsModal').remove();
+    });
+}
+
+async function findNearestHospital() {
+    const body = document.getElementById('nearestHospitalBody');
+    if (body) {
+        body.innerHTML = `
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-2 text-muted">Finding the closest hospital with available beds...</p>
+            </div>
+        `;
+    }
+
+    const modalElement = document.getElementById('nearestHospitalModal');
+    if (modalElement && window.bootstrap && typeof window.bootstrap.Modal === 'function') {
+        preserveModalTriggerFocus(modalElement);
+        window.bootstrap.Modal.getOrCreateInstance(modalElement).show();
+    }
+
+    try {
+        const response = await apiClient.get('/api/hospitals/nearest-for-driver');
+        const hospital = response.data;
+
+        if (!hospital) {
+            if (body) {
+                body.innerHTML = `<p class="text-muted mb-0">${response.message || 'No nearby hospital with available beds found.'}</p>`;
+            }
+            return;
+        }
+
+        const [lng, lat] = hospital.location?.coordinates || [];
+        const beds = Array.isArray(hospital.beds) ? hospital.beds : [];
+        const bedRows = beds
+            .filter((bed) => Number(bed.available) > 0)
+            .map((bed) => `<span class="badge bg-success me-1 mb-1">${bed.type}: ${bed.available}/${bed.total}</span>`)
+            .join('');
+
+        if (body) {
+            body.innerHTML = `
+                <h6 class="mb-1">${hospital.name}</h6>
+                <p class="text-muted mb-3">${Math.round((hospital.distanceMetres || 0) / 100) / 10} km away</p>
+                <div class="mb-3">${bedRows || '<span class="badge bg-secondary">Beds available</span>'}</div>
+                <p class="mb-3"><strong>Capacity:</strong> ${hospital.capacityStatus} (${hospital.availableBeds} available)</p>
+                ${hospital.phone ? `<p class="mb-1"><strong>Phone:</strong> ${hospital.phone}</p>` : ''}
+                ${lat != null && lng != null ? `<p class="text-muted">Lat: ${Number(lat).toFixed(5)}, Lng: ${Number(lng).toFixed(5)}</p>` : ''}
+                <a class="btn btn-primary w-100" href="${hospital.routeUrl}" target="_blank">
+                    Open Route
+                </a>
+            `;
+        }
+    } catch (error) {
+        console.error('Nearest hospital lookup failed:', error);
+        if (body) {
+            body.innerHTML = `<p class="text-danger mb-0">${error.message || 'Unable to find nearest hospital.'}</p>`;
+        }
+    }
 }
 
 async function respondToAssignment(requestId, accept) {
@@ -829,7 +977,7 @@ async function respondToAssignment(requestId, accept) {
 }
 
 async function completeMission(requestId) {
-    if (!confirm('Are you sure you want to mark this mission as completed?')) {
+    if (!confirm('Is the ride over? This will complete the emergency and make your ambulance available.')) {
         return;
     }
     

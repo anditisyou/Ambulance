@@ -5,10 +5,11 @@ const path = require('path');
 const redisClient = require('./redisClient');
 const EmergencyRequest = require('../models/EmergencyRequest');
 const logger = require('./logger');
-const { AuditLogger } = require('../models/AuditLog');
+const AuditLog = require('../models/AuditLog');
 
 class DataRetentionManager {
-  constructor() {
+  constructor(dependencies = {}) {
+    this.redisClient = dependencies.redisClient || redisClient;
     this.config = {
       logRetentionDays: 30,
       logMaxFileSizeMb: 100,
@@ -20,6 +21,7 @@ class DataRetentionManager {
       requestArchiveLocation: '/var/data/ers-archive',
       requestHotDays: 30,
       tempDataTTLDays: 7,
+      redisTempPrefixes: ['temp:', 'upload:', 'gps:filter:'],
       auditLogRetentionYears: 7,
     };
 
@@ -140,7 +142,7 @@ class DataRetentionManager {
 
       for (const stream of streams) {
         // XTRIM with MAXLEN to limit stream size
-        const trimmed = await redisClient.xtrim(
+        const trimmed = await this.redisClient.xtrim(
           stream,
           'MAXLEN',
           '~', // Approximate (for performance)
@@ -163,23 +165,36 @@ class DataRetentionManager {
    * Clean up temporary Redis keys
    */
   async _cleanupTemporaryRedisKeys() {
+    const report = { scanned: 0, removed: 0, failures: [] };
     try {
-      for (const prefix of this.config.redisTempPrefixes) {
+      if (!this.redisClient) {
+        report.failures.push('Redis client is not configured');
+        return report;
+      }
+      const prefixes = Array.isArray(this.config.redisTempPrefixes)
+        ? this.config.redisTempPrefixes.filter(Boolean)
+        : [];
+      for (const prefix of prefixes) {
         // Find keys with pattern and delete expired ones
-        const keys = await redisClient.keys(`${prefix}*`);
+        const keys = await this.redisClient.keys(`${prefix}*`);
+        report.scanned += keys.length;
 
         for (const key of keys) {
-          const ttl = await redisClient.ttl(key);
+          const ttl = await this.redisClient.ttl(key);
           
           // TTL -1 means no expiry (should be cleared)
           if (ttl === -1) {
-            await redisClient.del(key);
+            await this.redisClient.del(key);
+            report.removed++;
             logger.debug(`Cleaned up orphaned Redis key: ${key}`);
           }
         }
       }
+      return report;
     } catch (err) {
+      report.failures.push(err.message);
       logger.error(`Temporary key cleanup failed: ${err.message}`);
+      return report;
     }
   }
 
@@ -195,7 +210,7 @@ class DataRetentionManager {
       const oldRequests = await EmergencyRequest.find({
         status: 'COMPLETED',
         completionTime: { $lt: archiveAfterDate },
-        archived: { $ne: true },
+        logicalArchived: { $ne: true },
       })
         .select('_id userId requestTime completionTime')
         .lean()
@@ -206,26 +221,17 @@ class DataRetentionManager {
         return;
       }
 
-      // Archive to S3 or other long-term storage
-      const archivedIds = [];
-      for (const request of oldRequests) {
-        try {
-          // In production: upload to S3/cold storage
-          // await archiveToS3(request);
-          archivedIds.push(request._id);
-        } catch (err) {
-          logger.error(`Failed to archive request ${request._id}: ${err.message}`);
-        }
-      }
-
-      // Mark as archived in MongoDB
+      // No external archive provider is configured in this prototype. Mark the
+      // retention state explicitly as logical rather than claiming cold-storage
+      // upload succeeded.
+      const archivedIds = oldRequests.map((request) => request._id);
       if (archivedIds.length > 0) {
         await EmergencyRequest.updateMany(
           { _id: { $in: archivedIds } },
-          { $set: { archived: true, archivedAt: new Date() } }
+          { $set: { logicalArchived: true, logicalArchivedAt: new Date() } }
         );
 
-        logger.info(`Archived ${archivedIds.length} old requests to cold storage`);
+        logger.info(`Marked ${archivedIds.length} old requests as logically archived; external archival is not configured`);
       }
     } catch (err) {
       logger.error(`Request archival failed: ${err.message}`);
@@ -242,13 +248,13 @@ class DataRetentionManager {
 
       // Clean temporary location smoothing filters that are stale
       const filterPattern = 'gps:filter:*';
-      const filterKeys = await redisClient.keys(filterPattern);
+      const filterKeys = await this.redisClient.keys(filterPattern);
 
       let cleaned = 0;
       for (const key of filterKeys) {
-        const ttl = await redisClient.ttl(key);
+        const ttl = await this.redisClient.ttl(key);
         if (ttl === -1) { // No TTL = orphaned
-          await redisClient.del(key);
+          await this.redisClient.del(key);
           cleaned++;
         }
       }
@@ -270,7 +276,7 @@ class DataRetentionManager {
       const db = EmergencyRequest.db;
       const collections = {
         requests: await EmergencyRequest.collection.stats(),
-        auditLogs: await AuditLogger.collection.stats().catch(() => ({})),
+        auditLogs: await AuditLog.collection.stats().catch(() => ({})),
       };
 
       const mongoDbSize = Object.values(collections).reduce(
@@ -279,7 +285,7 @@ class DataRetentionManager {
       );
 
       // Redis memory usage
-      const redisInfo = await redisClient.info('memory');
+      const redisInfo = await this.redisClient.info('memory');
       const redisUsedMb = parseInt(redisInfo.match(/used_memory_human:(\S+)/)?.[1] || '0M');
 
       // Log file sizes
@@ -293,8 +299,9 @@ class DataRetentionManager {
       }
 
       // Request archival status
-      const archivedCount = await EmergencyRequest.countDocuments({ archived: true });
-      const hotstorageCount = await EmergencyRequest.countDocuments({ archived: { $ne: true } });
+      const archivedCount = await EmergencyRequest.countDocuments({ logicalArchived: true });
+      const hotstorageCount = await EmergencyRequest.countDocuments({ logicalArchived: { $ne: true } });
+      const totalRequests = archivedCount + hotstorageCount;
 
       return {
         timestamp: new Date(),
@@ -312,9 +319,9 @@ class DataRetentionManager {
         },
         dataDistribution: {
           hotStorage: hotstorageCount,
-          archived: archivedCount,
+          logicallyArchived: archivedCount,
           archivedPercentage: (
-            (archivedCount / (archivedCount + hotstorageCount)) *
+            (totalRequests ? archivedCount / totalRequests : 0) *
             100
           ).toFixed(1),
         },
@@ -337,9 +344,15 @@ class DataRetentionManager {
         completionTime: { $lt: beforeDate },
       }).limit(5000);
 
-      // Archive logic here
-      logger.info(`Force archived ${requests.length} requests`);
-      return requests.length;
+      const ids = requests.map((request) => request._id);
+      if (ids.length) {
+        await EmergencyRequest.updateMany(
+          { _id: { $in: ids } },
+          { $set: { logicalArchived: true, logicalArchivedAt: new Date() } }
+        );
+      }
+      logger.info(`Logically archived ${ids.length} requests; no external archive was created`);
+      return ids.length;
     } catch (err) {
       logger.error(`Force archival failed: ${err.message}`);
       throw err;
@@ -359,3 +372,4 @@ class DataRetentionManager {
 }
 
 module.exports = new DataRetentionManager();
+module.exports.DataRetentionManager = DataRetentionManager;
